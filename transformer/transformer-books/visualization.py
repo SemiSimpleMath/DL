@@ -18,29 +18,27 @@ def get_data(file):
     return data
 
 most_recent_log = utils.most_recent_file(config.log_directory)
-
 d1 = get_data(most_recent_log)
+#d1 = get_data('logs/log6783.txt')
 
 
-
+# d3 = get_data('logs/log55154.txt')
 
 
 x1 = d1['batch_num']
 y1 = d1['current_loss']
 
-low = 6000//20
+# x3 = d3['batch_num']
+# y3 = d3['current_loss']
 
 high = len(x1)
-
+low = high //2
 print (high)
 x1 = x1[low:high]
 y1 = y1[low:high]
 
-d3 = get_data('logs/log55154.txt')
-x3 = d3['batch_num']
-y3 = d3['current_loss']
-x3 = x3[low:high]
-y3 = y3[low:high]
+# x3 = x3[:high]
+# y3 = y3[:high]
 
 plt.xlabel('Number of batches')
 plt.ylabel(f'Average loss over last {config.output_every// (config.accumulate_size)} batches')
@@ -49,14 +47,14 @@ x1 = list(map(float, x1))
 y1 = list(map(float, y1))
 
 from scipy.signal import savgol_filter
-yhat = savgol_filter(y1, 51, 3) # window size 51, polynomial order 3
+yhat = savgol_filter(y1, 10, 3) # window size 51, polynomial order 3
 x2 = list(map(float, x1))
 y2 = list(map(float, yhat))
 
-x3 = list(map(float, x3))
-y3 = list(map(float, y3))
+# x3 = list(map(float, x3))
+# y3 = list(map(float, y3))
 
 plt.plot(x1, y1)
 plt.plot(x2, y2)
-plt.plot(x3, y3)
+# plt.plot(x3, y3)
 plt.show()

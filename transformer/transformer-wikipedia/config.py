@@ -24,7 +24,10 @@ model_directory = '.\\models\\'
 # batch size for training
 batch_size = 16
 
-batch_scale_factor = 1
+# zero gradients after every accumulate_size batches
+accumulate_size = 10
+
+effective_bs = batch_size * accumulate_size
 
 # total number of batches for training
 num_batches = 500000
@@ -34,7 +37,7 @@ ds_path = "wikipedia"
 ds_file = "20220301.en"
 
 # tokenizer file path
-tok_file = "data/tokenizer-32.json"
+tok_file = "../shared_data/tokenizers/tokenizer-32768.json"
 
 # directory for storing log files
 log_directory = "./logs/"
@@ -44,7 +47,8 @@ log_file = "log.txt"
 save_every = 1000
 
 # frequency at which output is generated during training
-output_every = 100
+output_every = 200
 
 # frequency at which learning rate is updated during training
-lr_step = 1
+lr_step = accumulate_size
+batch_scale_factor = 1

@@ -1,16 +1,14 @@
 from tokenizers.models import BPE
 from tokenizers.pre_tokenizers import Whitespace
 from tokenizers.trainers import BpeTrainer
-from transformers import GPT2TokenizerFast
+from transformers import GPT2TokenizerFast, AutoTokenizer
 
 import config
 
 from tokenizers import (
     decoders,
     models,
-    normalizers,
     pre_tokenizers,
-    processors,
     trainers,
     Tokenizer,
 )
@@ -30,7 +28,7 @@ def tokenizer_train_wiki_103():
 
 
 def tokenizer_save(tok):
-    tok.save("data/tokenizer-32.json")
+    tok.save("data/tokenizer-32768-2.json")
 
 
 def tokenizer_load(path):
@@ -38,16 +36,35 @@ def tokenizer_load(path):
     return tokenizer
 
 
-def batch_iterator(ds):
-    bs = 1000
-    for i in range(0, len(ds), bs):
-        yield ds['train'][i: i + bs]["text"]
-
-
 def load_wikipedia():
     from datasets import load_dataset
     ds = load_dataset("wikipedia", "20220301.en")
     return ds
+
+
+def batch_iterator(ds, bs=1_000):
+    i = 0
+    while i < len(ds['train']) // bs:
+        if i % 10 == 0:
+            print(i)
+        i += 1
+        yield ds['train'][i * bs: i * bs + bs]['text']
+
+
+def large_vocab_train(ds, book_ds, bs=1_000):
+    i = 0
+    while i < len(ds['train']) // bs:
+        if i % 10 == 0:
+            print(i)
+        i += 1
+        yield ds['train'][i * bs: i * bs + bs]['text']
+
+    j = 0
+    while j < len(book_ds) // bs:
+        if j % 10 == 0:
+            print(j)
+        j += 1
+        yield book_ds[i * bs: i * bs + bs]
 
 
 def train_tokenizer():
@@ -83,13 +100,14 @@ def load_tokenizer():
     tok.add_special_tokens({'pad_token': '[PAD]'})
     return tok
 
+
 def tokenizer_test(tok):
     encoding = tok.encode("Let's test this tokenizer.")
     print(encoding)
     print(tok.decode(encoding))
 
+
 if __name__ == '__main__':
     tok = train_tokenizer()
     tok.add_special_tokens({'pad_token': '[PAD]'})
     tokenizer_test(tok)
-

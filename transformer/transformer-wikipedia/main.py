@@ -1,10 +1,13 @@
+import sys
+# setting path
+sys.path.append('../transformer_libs')
+import config
 import torch
 import torch.nn as nn
 import tokenizer
 import utils
 import data_utils
 import datetime
-import config
 from datasets import load_dataset
 import os
 
@@ -15,52 +18,51 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def train(model, opt, ds, tok, loss_func, bs, num_batches, seq_len, model_params):
     d_model = model_params['d_model']
-    start_batch_num = model_params['start_batch_num']
-
-    lr = utils.get_lr(start_batch_num, d_model)
+    start_sample_num = model_params['start_batch_num']
+    batch_num = start_sample_num // config.accumulate_size
+    lr = utils.get_lr(batch_num, d_model)
     for g in opt.param_groups:
         g['lr'] = lr
 
     print('Starting training')
-    print(f'start_batch_num: {start_batch_num}')
+    print(f'start_batch_num: {batch_num}')
     print(f'learning rate: {opt.param_groups[0]["lr"]}')
 
     # params we track during training
     total_loss = 0
-    total_sequences = start_batch_num * bs
+    total_sequences = start_sample_num * bs * config.seq_len
 
     start_time = datetime.datetime.now()
 
-    #positional encoding
-    pe = utils.get_pe(seq_len, d_model).to(device)
 
-    for batch_num in range(start_batch_num, start_batch_num + num_batches):
-
-        opt.zero_grad()
-
+    for sample_num in range(start_sample_num, start_sample_num + num_batches):
+        batch_num = sample_num//config.accumulate_size
         # load batch
-        combined = data_utils.get_batch(ds, tok, bs, batch_num, seq_len + 1)
+        combined = data_utils.get_batch(ds, tok, bs, sample_num, seq_len + 1)
         src = combined[:, :-1].to(device)
         target = combined[:, 1:].to(device)
-
+        # positional encoding
+        pe = utils.get_pe(src.size()[-1], d_model).to(device)
         # run through model
         pred = model(src, pe)
 
         # compute loss
         pred = pred.permute(0, 2, 1)
-        loss = loss_func(pred, target)
+        loss = loss_func(pred, target)/config.accumulate_size
 
         # back prop
         loss.backward()
 
-        # opt step
-        opt.step()
+        if sample_num % config.accumulate_size == 0 and sample_num != start_sample_num:
+            # opt step
+            opt.step()
+            opt.zero_grad()
 
-        total_loss += loss.item()
+        total_loss += loss.item() * config.accumulate_size
         total_sequences += bs * seq_len
 
         # log training data
-        if batch_num % config.output_every == 0 and batch_num != start_batch_num:
+        if sample_num % config.output_every == 0 and sample_num != start_sample_num:
             end_time = datetime.datetime.now()
             lr = opt.param_groups[0]["lr"]
             current_loss = total_loss / config.output_every
@@ -73,7 +75,7 @@ def train(model, opt, ds, tok, loss_func, bs, num_batches, seq_len, model_params
             log_data['total_seq'] = total_sequences
             log_data['lr'] = lr
             log_data['current_loss'] = current_loss
-            log_data['batch_interval'] = config.output_every
+            log_data['batch_interval'] = config.output_every//config.accumulate_size
             log_data['time_for_batch_interval'] = time_for_batch_interval
 
             utils.log(file_id, log_data, log_screen=True)
@@ -84,21 +86,20 @@ def train(model, opt, ds, tok, loss_func, bs, num_batches, seq_len, model_params
 
             start_time = datetime.datetime.now()
 
-        if batch_num % config.lr_step == 0 and batch_num != start_batch_num:
-            lr = utils.get_cyclic_lr(batch_num, d_model, stepsize=400)
+        if sample_num % config.lr_step == 0 and sample_num != start_sample_num:
+            lr = utils.get_lr(batch_num, d_model)
             for g in opt.param_groups:
                 g['lr'] = lr
 
         # save the model
-        if batch_num % config.save_every == 0 and batch_num != start_batch_num:
-            model_params['start_batch_num'] = batch_num + 1
+        if sample_num % config.save_every == 0 and sample_num != start_sample_num:
+            model_params['start_batch_num'] = sample_num + 1
             utils.save_model(model, opt, model_params)
 
 
 def main():
     # Load the dataset
     ds = load_dataset(config.ds_path, config.ds_file)
-
     # Load the tokenizer
     tok = tokenizer.load_tokenizer()
 
@@ -109,7 +110,7 @@ def main():
     vocab_size = tok.vocab_size + 1
 
     # Shuffle the dataset using a seed
-    ds = ds.shuffle(seed=2337)
+    ds = ds.shuffle(seed=42)
 
     # Set the LOAD flag to True to load either latest model or a specified model
     # Set the LOAD flag to False to generate a default model
