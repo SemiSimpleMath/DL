@@ -87,7 +87,7 @@ class Decoder(nn.Module):
             self.embedding.weight = self.l1.weight
 
     def forward(self, dec_inp, pe):
-        x = self.embedding(dec_inp) * np.sqrt(self.d_model)
+        x = self.embedding(dec_inp) * np.sqrt(self.d_model) # bs x L x d_model
         x = self.dropout(x + pe)
         for layer in self.layers:
             x = layer(x)

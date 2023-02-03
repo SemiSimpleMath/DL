@@ -172,15 +172,17 @@ def generate_next_n_tokens(prompt, n, search_function, model, model_params, widt
 def main():
 
     width = 3
-    p_nuc = .95
+    p_nuc = .8
     n = 100
     tok = tokenizer.load_tokenizer()
 
-    encoding = tok.encode("Let's test this tokenizer. How is this doing is it quite sure that")
+    encoding = tok.encode("Let's test this tokenizer.")
     print(encoding)
     print(tok.decode(encoding))
 
-    prompt = data_utils.text_to_model_input("She had a life long passion for", tok)
+    prompt = "He lived in Paris"
+    print(f'Prompt: {prompt}')
+    prompt = data_utils.text_to_model_input(prompt, tok)
     prompt = prompt.unsqueeze(0)
     prompt = prompt.to(device)
 

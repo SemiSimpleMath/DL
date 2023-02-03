@@ -44,14 +44,21 @@ log_directory = "./logs/"
 log_file = "log.txt"
 
 # frequency at which model is saved during training
-save_every = 1000
+save_every = 200 * accumulate_size
 
 # frequency at which output is generated during training
-output_every = 200
+output_every = 20 * accumulate_size
 
 # frequency at which learning rate is updated during training
-lr_step = 100
+update_lr_every = accumulate_size
 batch_scale_factor = 1
-book_path = "D:\\data sets\\book3\books3.tar\\books3\\books3\\the-eye.eu\\public\\Books\\Bibliotik\\"
-book_ds_size = 200_000
+
+eval_every = 500 * accumulate_size
+
+book_path = "D:\\data sets\\book3\\books3.tar\\books3\\books3\\the-eye.eu\\public\\Books\\Bibliotik\\"
+book_ds_size = 400_000  #2_000_000
 print('Including config for transformer-book')
+
+book_ds_file = './data/book_train.pkl'
+valid_ds_file = './data/book_valid.pkl'
+test_ds_file = './data/test_valid.pkl'

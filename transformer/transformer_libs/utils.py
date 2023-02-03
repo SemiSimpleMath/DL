@@ -103,8 +103,14 @@ def load_model(file):
 
     model_params['id'] = checkpoint['id']
 
-    model_params['start_batch_num'] = checkpoint['start_batch_num']
-
+    if 'samples_done' in checkpoint:
+        model_params['samples_done'] = checkpoint['samples_done']
+    else:
+        model_params['samples_done'] = 5040 # Todo remove once the old model has been saved
+    if 'batch_num' in checkpoint:
+        model_params['batch_num'] = checkpoint['batch_num']
+    else:
+        model_params['batch_num'] = 24700
     model = decoder.Decoder(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v, use_weight_tying=True)
     opt = torch.optim.AdamW(model.parameters(), lr=1, betas=(0.9, 0.98), eps=1e-9)
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -124,7 +130,7 @@ def default_model(vocab_size):
     d_q = model_params['d_q'] = config.model_params['d_q']
     d_v = model_params['d_v'] = config.model_params['d_v']
     model_params['vocab_size'] = vocab_size
-    model_params['start_batch_num'] = 0
+    model_params['samples_done'] = 0
     model_params['id'] = random.randint(0, 100000)
     model = decoder.Decoder(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v, use_weight_tying=True)
     opt = torch.optim.AdamW(model.parameters(), lr=2.5e-4, betas=(0.9, 0.98), eps=1e-9)
@@ -136,7 +142,6 @@ def default_model(vocab_size):
 
 def save_model(model, opt, model_params):
     path = f'.\models\model-{model_params["id"]}-' + time.strftime("%Y%m%d-%H%M%S")
-
     torch.save({
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': opt.state_dict(),
@@ -149,8 +154,9 @@ def save_model(model, opt, model_params):
         'd_q': model_params['d_q'],
         'd_k': model_params['d_k'],
         'd_v': model_params['d_v'],
-        'start_batch_num': model_params['start_batch_num'],
+        'batch_num': model_params['batch_num'],
         'id': model_params['id'],
+        'samples_done': model_params['samples_done'],
     }, path)
 
     print(f"Saving model: {path}")
@@ -193,8 +199,8 @@ def cyclical_lr(stepsize, batch_num, min_lr=2.e-5, max_lr=2.5e-4):
 
 
 def get_cyclic_lr(b, d_model, stepsize):
-    min_lr = 1/6 * d_model ** (-.5) * (b + 1) ** (-.5)
-    max_lr = d_model ** (-.5) * (b + 1) ** (-.5)
+    min_lr =  1/6 * d_model ** (-.5) * (b + 1) ** (-.5)
+    max_lr =   d_model ** (-.5) * (b + 1) ** (-.5)
     cl = cyclical_lr(stepsize, b, min_lr, max_lr)
 
     warmup_steps = 4000

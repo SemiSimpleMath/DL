@@ -5,6 +5,8 @@ import numpy as np
 import sys
 
 # setting path
+import config
+
 sys.path.append('../transformer_libs')
 import utils
 
@@ -58,12 +60,14 @@ def get_wiki_batch(ds, tok, bs, batches_done, L):
     return combined
 
 def get_batch(ds, tok, bs, samples_done, L):
-    low = samples_done * bs % len(ds)
-    high = (samples_done + 1) * bs % len(ds)
+    low = (samples_done * bs) % len(ds)
+    high = ((samples_done + 1) * bs) % len(ds)
 
-    if low >= high:
-        low = 0
-        high = bs
+    if low > high:
+        print("low, high", (low, high))
+        low, high = high, low
+        high = low + bs
+        print("low, high", (low, high))
 
     sample = tok(
         ds[low: high],
@@ -115,6 +119,7 @@ def remove_bad_chars(s):
 def process_book(b, max_seq_len):
     b = ''.join(b)
     b = b.split('.')
+    b = [x+'.' for x in b]
     sequence_len = 0
     seq = ''
     result = []
@@ -154,3 +159,44 @@ def create_book_ds(db_size=100_000):
         ds.extend(b)
     random.shuffle(ds)
     return ds
+
+
+import pickle
+
+def save_book_ds(ds, file):
+    open_file = open(file, "wb")
+    pickle.dump(ds, open_file)
+
+def load_book_ds(file):
+    print("Loading pickle file")
+    with open(file, 'rb') as f:
+        return pickle.load(f)
+
+def create_book_lists(ds_size):
+    v_size = 100_000
+    test_size = 100_000
+
+    path = "C:\\Users\\semis\\IdeaProjects\\DL\\transformer\\transformer-books\\data\\"
+    s_file = path +"book_list.pkl"
+    ds = create_book_ds(ds_size)
+    ds = ds[:ds_size]
+    #
+    save_book_ds(ds, s_file)
+    #
+    file = path + "book_list.pkl"
+    t_file = path +'book_train.pkl'
+    v_file = path +'book_valid.pkl'
+    test_file = path + 'book_test.pkl'
+    ds = load_book_ds(file)
+    print(len(ds))
+    train = ds[:-v_size-test_size]
+    valid = ds[ds_size - (v_size+test_size): ds_size - v_size]
+    test = ds[ds_size- v_size:]
+    save_book_ds(train, t_file)
+    save_book_ds(valid, v_file)
+    save_book_ds(test, test_file)
+    print(len(train))
+    print(len(test))
+    print(len(valid))
+
+#create_book_lists(5_000_000)

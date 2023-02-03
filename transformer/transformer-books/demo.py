@@ -172,15 +172,16 @@ def generate_next_n_tokens(prompt, n, search_function, model, model_params, widt
 def main():
 
     width = 3
-    p_nuc = .8
-    n = 100
+    p_nuc = .95
+    max_depth = 2
+    n = 50
     tok = tokenizer.load_tokenizer()
 
     encoding = tok.encode("Let's test this tokenizer.")
     print(encoding)
     print(tok.decode(encoding))
 
-    prompt = "He lived in Paris"
+    prompt = "Rahul Fernandez works at"
     print(f'Prompt: {prompt}')
     prompt = data_utils.text_to_model_input(prompt, tok)
     prompt = prompt.unsqueeze(0)
@@ -191,7 +192,7 @@ def main():
     model, opt, model_params = utils.load_model(file)
     model.eval()
     # utils.to_cuda(model)
-    max_depth = 2
+
 
     result_tokens = generate_next_n_tokens(prompt, n, beam_search_2, model, model_params, width, max_depth, p_nuc)
 
