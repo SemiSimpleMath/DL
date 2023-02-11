@@ -78,7 +78,6 @@ def train(model, opt, ds, tok, loss_func, bs, num_batches, seq_len, model_params
     lr_scale_factor = .1
     #lr = lr_scale_factor * utils.get_cyclic_lr(batch_num, d_model, 10_000)
     lr = 1e-5
-    torch.autograd.set_detect_anomaly(True)
     for g in opt.param_groups:
         g['lr'] = lr
 
@@ -104,10 +103,9 @@ def train(model, opt, ds, tok, loss_func, bs, num_batches, seq_len, model_params
 
         src = combined[:, :-1].to(device)  # bs x L
         target = combined[:, 1:].to(device)  # bs x L
-        # positional encoding
-        pe = utils.get_pe(src.size()[-1], d_model).to(device)  # 1 x L x d_model
         # run through model
-        pred = model(src, pe)
+        memory = torch.ones(1, 768)
+        pred = model(src, memory)
         # compute loss
         pred = pred.permute(0, 2, 1)
         loss = loss_func(pred, target)/config.accumulate_size
@@ -192,32 +190,9 @@ def main():
 
     # Get the vocab size. +1 is due to [PAD] token
     vocab_size = tok.vocab_size + 1
-
-    # Set the LOAD flag to True to load either latest model or a specified model
-    # Set the LOAD flag to False to generate a default model
-    LOAD = True
-
-    if LOAD:
-        # Initialize the file variable as None
-        file = None
-
-        # Uncomment the next line to load a specific file
-        #file = config.model_directory + "model-88319-20230204-234856"
-
-        # If no file is specified, get the most recent file in the specified directory
-        if file is None:
-            directory = config.model_directory
-            file = utils.most_recent_file(directory)
-            print(f'Loading model: {file}')
-
-        # Load the model, optimizer, and model parameters from the specified file
-        model, opt, model_params = utils.load_model(file)
-    else:
-        # If LOAD is set to False, generate a new model to train
-        print('Generating a new model to train.')
-        model, opt, model_params = utils.default_model(vocab_size)
-        model_params['batch_num'] = 0
-
+    decoder_layer = nn.TransformerDecoderLayer(d_model=768, nhead=12)
+    model = nn.TransformerDecoder(decoder_layer, num_layers=12)
+    opt = torch.optim.AdamW(model.parameters())
     # Get the total number of parameters in the model
     pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f'Number of model parameters: {pytorch_total_params}')
@@ -229,7 +204,10 @@ def main():
     bs = config.batch_size
     num_batches = config.num_batches
     seq_len = config.seq_len
-
+    model_params = {}
+    model_params['batch_num'] = 0
+    model_params['d_model'] = 768
+    model_params['samples_done'] = 0
     #eval_model(model, tok, loss, bs, 100, seq_len, model_params)
     # Train the model
     train(model, opt, ds, tok, loss, bs, num_batches, seq_len, model_params)

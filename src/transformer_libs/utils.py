@@ -5,9 +5,10 @@ import time
 import math
 import config
 from torch.autograd import Variable
-import decoder
+from transformer_libs import decoder
 import random
 import numpy as np
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -35,15 +36,22 @@ def optimizer_to(optim, device):
                         subparam._grad.data = subparam._grad.data.to(device)
 
 
-def log(file_id, log_data, log_screen=True):
+def log(file_id, log_data, log_screen=True, log_file=True):
     path = config.log_directory
     file = f"log{file_id}.txt"
-    with open(path + file, "a") as f:
+    if log_file:
+        with open(path + file, "a") as f:
+            for k, v in log_data.items():
+                f.write(f'{k}:{v}\n')
+                if log_screen:
+                    print(f'{k}: {v}')
+            print("----------------------------------------------------------------------------------------------------\n")
+    else:
         for k, v in log_data.items():
-            f.write(f'{k}:{v}\n')
             if log_screen:
                 print(f'{k}: {v}')
         print("----------------------------------------------------------------------------------------------------\n")
+
 
 
 def most_recent_file(directory):
@@ -88,7 +96,7 @@ def get_pe(seq_len, d_model):
     return Variable(pe, requires_grad=False)
 
 
-def load_model(file):
+def load_model(file, cuda=True):
     checkpoint = torch.load(file)
     model_params = {}
     num_blocks = model_params['num_blocks'] = checkpoint['num_blocks']
@@ -102,19 +110,23 @@ def load_model(file):
     d_v = model_params['d_v'] = checkpoint['d_v']
 
     model_params['id'] = checkpoint['id']
-
     if 'samples_done' in checkpoint:
         model_params['samples_done'] = checkpoint['samples_done']
     else:
-        model_params['samples_done'] = 5040 # Todo remove once the old model has been saved
+        model_params['samples_done'] = 0
     if 'batch_num' in checkpoint:
         model_params['batch_num'] = checkpoint['batch_num']
     else:
-        model_params['batch_num'] = 24700
+        print("Model has no batch_num")
     model = decoder.Decoder(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v, use_weight_tying=True)
-    opt = torch.optim.AdamW(model.parameters(), lr=1, betas=(0.9, 0.98), eps=1e-9)
+    #model = paralleldecoder.ParallelDecoder(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v)
     model.load_state_dict(checkpoint['model_state_dict'])
+    if cuda:
+        model.cuda(device)
+    opt = torch.optim.AdamW(model.parameters(), lr=1, betas=(0.9, 0.98), eps=1e-9)
     opt.load_state_dict(checkpoint['optimizer_state_dict'])
+    if cuda:
+        optimizer_to(opt, device)
 
     return model, opt, model_params
 
@@ -133,10 +145,13 @@ def default_model(vocab_size):
     model_params['samples_done'] = 0
     model_params['id'] = random.randint(0, 100000)
     model = decoder.Decoder(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v, use_weight_tying=True)
-    opt = torch.optim.AdamW(model.parameters(), lr=2.5e-4, betas=(0.9, 0.98), eps=1e-9)
+    #model = paralleldecoder.ParallelDecoder(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v)
+    model.cuda()
     for p in model.parameters():
         if p.dim() > 1:
             nn.init.xavier_uniform_(p)
+    opt = torch.optim.AdamW(model.parameters(), lr=2.5e-4, betas=(0.9, 0.98), eps=1e-9)
+    optimizer_to(opt, device)
     return model, opt, model_params
 
 
@@ -208,4 +223,14 @@ def get_cyclic_lr(b, d_model, stepsize):
 
     return min(cl, warmup_lr)
 
+
+def load_most_recent_model():
+    directory = config.model_directory
+    file = most_recent_file(directory)
+    print(f'Loading most recent model: {file}')
+    return load_model(file)
+
+def print_model_params(model_params):
+    for k, v in model_params.items():
+        print(f"{k}: {v}")
 

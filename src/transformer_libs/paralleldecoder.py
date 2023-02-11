@@ -72,25 +72,32 @@ class DecoderBlock(nn.Module):
         return x
 
 
-class Decoder(nn.Module):
-    def __init__(self, num_blocks, d_model, d_middle, d_token, dropout, h, d_Q, d_K, d_V, use_weight_tying=False):
+class ParallelDecoder(nn.Module):
+    def __init__(self, num_blocks, d_model, d_middle, d_token, dropout, h, d_Q, d_K, d_V):
         super().__init__()
+        assert num_blocks % 2 == 0, "num_blocks must be even"
         self.d_model = d_model
         self.embedding = nn.Embedding(d_token, d_model)
-        self.layers = nn.ModuleList(
-            DecoderBlock(d_model, d_middle, dropout, h, d_Q, d_K, d_V) for _ in range(num_blocks))
+        self.layers1 = nn.ModuleList(
+            DecoderBlock(d_model, d_middle, dropout, h, d_Q, d_K, d_V) for _ in range(num_blocks//2))
+        self.layers2 = nn.ModuleList(
+            DecoderBlock(d_model, d_middle, dropout, h, d_Q, d_K, d_V) for _ in range(num_blocks//2))
 
-        self.l1 = nn.Linear(d_model, d_token)
+        self.l1 = nn.Linear(2*d_model, d_model)
+        self.l2 = nn.Linear(d_model, d_token)
         self.dropout = nn.Dropout(dropout)
 
-        if use_weight_tying:
-            self.embedding.weight = self.l1.weight
 
     def forward(self, dec_inp, pe):
-        x = self.embedding(dec_inp) * np.sqrt(self.d_model) # bs x L x d_model
-        x = self.dropout(x + pe)
-        for layer in self.layers:
-            x = layer(x)
-        x = self.l1(x)
+        emb_x = self.embedding(dec_inp) * np.sqrt(self.d_model) # bs x L x d_model
+        x1 = self.dropout(emb_x + pe)
+        x2 = x1
+        for layer in self.layers1:
+            x1 = layer(x1)
+        for layer in self.layers2:
+            x2 = layer(x2)
+
+        x = torch.cat([x1,x2], dim=-1)
+        x = self.l2(F.relu(self.l1(x)))
 
         return x

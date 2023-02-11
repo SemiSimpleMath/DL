@@ -28,7 +28,7 @@ d1 = get_data(most_recent_log)
 x1 = d1['batch_num']
 y1 = d1['current_loss']
 
-low = 6000//20
+low = 0
 
 high = len(x1)
 

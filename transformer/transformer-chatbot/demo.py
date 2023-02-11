@@ -1,13 +1,15 @@
+import sys
+# setting path
+sys.path.append('../transformer_libs')
+
 import collections
-import test
+
 import torch
 import torch.nn.functional as F
 import config
-from transformer_libs import data_utils
-from transformer_libs import utils
-from transformer_libs import tokenizer
-
-import transformer_libs
+import tokenizer
+import data_utils
+import utils
 
 # set device to cpu so i can train at same time on the gpu without running
 # out of gpu space
@@ -42,6 +44,7 @@ def beam_search_2(model, params, width, max_depth, p_nuc, prompt):
         prompt = node['prompt']
         seq_len = prompt.shape[-1]
 
+
         pe = utils.get_pe(seq_len, d_model).to(device)
         out = model(prompt, pe)
         last_row = out[:, -1, :]
@@ -53,11 +56,6 @@ def beam_search_2(model, params, width, max_depth, p_nuc, prompt):
             token = index
             score = -torch.log(probs[index])
 
-
-            # pl = prompt.tolist()
-            # pl = pl[0]
-            # ct = pl.count(token)
-            # score *= (.1 ** ct)
             child_data = {'score': node['score'] + score, 'token': token, 'tokens': node['tokens'] + [token]}
             token = torch.ones(1) * token
             child_data['prompt'] = torch.cat([node['prompt'].squeeze(), token], -1).to(torch.int64).unsqueeze(0)
@@ -72,7 +70,7 @@ def beam_search_2(model, params, width, max_depth, p_nuc, prompt):
             candidates = []
             continue
 
-    winner = sorted(final_candidates, key=lambda d: d['score'])[-1]
+    winner = sorted(final_candidates, key=lambda d: d['score'])[0]
 
     # get the top candidate and its first word.  This is what we return!
 
@@ -92,6 +90,7 @@ def beam_search(model, params, width, p, prompt, n):
     for i in range(n):
         # generate the batches
         seq_len = prompt.shape[-1]
+
 
         pe = utils.get_pe(seq_len, d_model).to(device)
         b = model(prompt, pe)
@@ -162,36 +161,62 @@ def generate_new_beam_batch(prev_batch, new_beam):
 
 
 def generate_next_n_tokens(prompt, n, search_function, model, model_params, width, max_depth, p_nuc, tok):
-    for _ in range(n):
-        result = search_function(model, model_params, width, max_depth, p_nuc, prompt)
-        print(tok.decode(result), end="")
-        result = torch.ones(1) * result
-        prompt = torch.cat([prompt.squeeze(), result], -1).to(torch.int64).unsqueeze(0)
 
-    return prompt
+    return_string = ""
+    for _ in range(n):
+        word = search_function(model, model_params, width, max_depth, p_nuc, prompt)
+        if word != 0:
+            decoded_word = tok.decode(word)
+            print(decoded_word, end="")
+            return_string += decoded_word
+        else:
+            print("\n")
+            break
+
+
+        word = torch.ones(1) * word
+        prompt = torch.cat([prompt.squeeze(), word], -1).to(torch.int64).unsqueeze(0)
+
+
+    return return_string + '<|endoftext|>'
+
+
+def lets_chat(n, search_function, model, model_params, width, max_depth, p_nuc, tok):
+    history = ""
+    while True:
+        prompt = input("Type something: ")
+        prompt += '<|endoftext|>'
+        history += prompt
+        history = history.split('<|endoftext|>')
+        history = history[-4:]
+        history = [x+'<|endoftext|>' for x in history]
+        history = ''.join(history)
+        print("History: ", history)
+        prompt = data_utils.text_to_model_input(history, tok)
+        prompt = prompt.unsqueeze(0)
+        prompt = prompt.to(device)
+        response = generate_next_n_tokens(prompt, n, search_function, model, model_params, width, max_depth, p_nuc, tok)
+        history += response
 
 
 def main():
+
     width = 3
-    p_nuc = .90
+    p_nuc = .95
     max_depth = 2
     n = 80
     tok = tokenizer.load_tokenizer()
 
-    prompt = "We decided to travel to"
-    print(f'Prompt: {prompt}')
-    text_prompt = prompt
-    prompt = data_utils.text_to_model_input(prompt, tok)
-    prompt = prompt.unsqueeze(0)
-    prompt = prompt.to(device)
 
     directory = config.model_directory
     file = utils.most_recent_file(directory)
     model, opt, model_params = utils.load_model(file, False)
     model.eval()
     # utils.to_cuda(model)
-    print(text_prompt, end=" ")
-    result_tokens = generate_next_n_tokens(prompt, n, beam_search_2, model, model_params, width, max_depth, p_nuc, tok)
+
+
+    lets_chat(n, beam_search_2, model, model_params, width, max_depth, p_nuc, tok)
+
 
 
 main()

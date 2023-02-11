@@ -2,14 +2,8 @@ import random
 
 import torch
 import numpy as np
-import sys
 
-# setting path
-import config
-
-sys.path.append('../transformer_libs')
-import utils
-
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def text_to_token(text, tokenizer):
     output = tokenizer.encode(text)
@@ -40,6 +34,7 @@ def text_to_model_input(text, tokenizer):
 
 
 def get_wiki_batch(ds, tok, bs, batches_done, L):
+    test = ds['train'][batches_done * bs: (batches_done + 1) * bs]['text']
     sample = tok(
         ds['train'][batches_done * bs: (batches_done + 1) * bs]['text'],
         padding=True,
@@ -77,16 +72,24 @@ def get_batch(ds, tok, bs, samples_done, L):
         return_attention_mask=False,
         return_tensors="pt"
     ).input_ids
-    firstpad = sample.argmax(dim=-1)
-    starts = (torch.rand(bs) * torch.clamp(firstpad - L + 1, min=0).to(torch.float)).to(torch.int64)
-    if firstpad.max() < L:
-        print(f"firstpad.max() < L! {firstpad.max()} {L}")
-        print(sample.shape)
-        print(sample)
-    idx = starts.unsqueeze(-1) + torch.arange(min(L, firstpad.max()))
-    combined = torch.gather(sample, 1, idx).to(utils.device)
+    combined = sample[:,:257]
 
     return combined
+
+def get_chat_batch(ds, bs, samples_done):
+    low = (samples_done * bs) % len(ds)
+    high = ((samples_done + 1) * bs) % len(ds)
+
+    if low > high:
+        print("low, high", (low, high))
+        low, high = high, low
+        high = low + bs
+        print("low, high", (low, high))
+
+    combined = torch.Tensor(ds[low:high]).to(torch.int64)
+
+    return combined
+
 
 def load_book(file):
     book = []
@@ -111,22 +114,29 @@ def get_directories_in_path(p):
 
 
 def remove_bad_chars(s):
-    bad_chars = {ord('_'): None, ord('/'): None, ord('\n'): " "}
+    bad_chars = {ord('/'): None, ord('\n'): " "}
     s = s.translate(bad_chars)
     return s
-
+import re
+def validate_line(line):
+    x = re.search(r"[^\w\d\s,\.:\'\?!;-]|[_]", line)
+    if x:
+        return False
+    else:
+        return True
 
 def process_book(b, max_seq_len):
     b = ''.join(b)
     b = b.split('.')
     b = [x+'.' for x in b]
-    sequence_len = 0
     seq = ''
     result = []
     total_words = 0
     for sentence in b:
         seq = seq.strip()
         sentence = remove_bad_chars(sentence)
+        if not validate_line(sentence):
+            continue
         sentence = sentence.strip()
         words_sentence = len(sentence.split())
         if words_sentence < 5:
@@ -146,6 +156,7 @@ def create_book_ds(db_size=100_000):
     ds = []
     directories = get_directories_in_path(book_path)
     min_data_len = db_size
+    count = 0
     while len(ds) < min_data_len:
         # get random directory
         d = directories[np.random.randint(2, len(directories))]
@@ -157,6 +168,9 @@ def create_book_ds(db_size=100_000):
         b = load_book(full_path)
         b = process_book(b, 256)
         ds.extend(b)
+        count += 1
+        if (count + 1) % 100 == 0:
+            print("percent done: ", len(ds)/db_size)
     random.shuffle(ds)
     return ds
 
@@ -177,16 +191,16 @@ def create_book_lists(ds_size):
     test_size = 100_000
 
     path = "C:\\Users\\semis\\IdeaProjects\\DL\\transformer\\transformer-books\\data\\"
-    s_file = path +"book_list.pkl"
+    s_file = path +"book_list2.pkl"
     ds = create_book_ds(ds_size)
     ds = ds[:ds_size]
     #
     save_book_ds(ds, s_file)
     #
-    file = path + "book_list.pkl"
-    t_file = path +'book_train.pkl'
-    v_file = path +'book_valid.pkl'
-    test_file = path + 'book_test.pkl'
+    file = path + "book_list2.pkl"
+    t_file = path +'book_train2.pkl'
+    v_file = path +'book_valid2.pkl'
+    test_file = path + 'book_test2.pkl'
     ds = load_book_ds(file)
     print(len(ds))
     train = ds[:-v_size-test_size]
@@ -199,4 +213,54 @@ def create_book_lists(ds_size):
     print(len(test))
     print(len(valid))
 
-#create_book_lists(5_000_000)
+
+import pandas as pd
+
+def save_chat_ds(ds, file):
+    open_file = open(file, "wb")
+    pickle.dump(ds, open_file)
+
+def load_chat_ds(file):
+    print("Loading pickle file")
+    with open(file, 'rb') as f:
+        return pickle.load(f)
+
+def create_chat_data(tok):
+    df = pd.read_csv("./data/topical_chat.csv")
+    pad = 32767
+    eot = 0
+    conv_ds =[]
+    overflow = []
+    last_id = df['conversation_id'].tolist()[-1]
+    for m_id in range(1, last_id):
+        messages = df.loc[df['conversation_id'] == m_id]['message']
+        conv = []
+        for m in messages:
+            tok_m = tok.encode(m)
+            tok_m.append(eot)
+            if len(tok_m) > 256:
+                tok_m = tok_m[:256]
+            if len(conv) + len(tok_m) <= 256:
+                conv.extend(tok_m)
+            else:
+                overflow = tok_m
+                while(len(conv)) < 257:
+                    conv.append(pad)
+                conv_ds.append(conv)
+                conv = overflow[:]
+                overflow = []
+            if len(conv) == 256:
+                conv.append(pad)
+                conv_ds.append(conv)
+                conv = overflow[:]
+                overflow = []
+        if len(conv) > 0:
+            while(len(conv)) < 257:
+                conv.append(pad)
+            conv_ds.append(conv)
+
+
+    return conv_ds
+
+if __name__ == '__main__':
+    create_book_lists(5_000_000)

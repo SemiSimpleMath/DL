@@ -1,10 +1,15 @@
+import sys
+
+# setting path
+sys.path.append('../transformer_libs')
 import config
 import torch
 import torch.nn as nn
-from transformer_libs import tokenizer
-from transformer_libs import data_utils
+import tokenizer
+import utils
+import data_utils
 import datetime
-from transformer_libs import utils
+
 import os
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
@@ -76,9 +81,7 @@ def train(model, opt, ds, tok, loss_func, bs, num_batches, seq_len, model_params
     start_batch_num = model_params['batch_num']
     batch_num = start_batch_num
     lr_scale_factor = .1
-    #lr = lr_scale_factor * utils.get_cyclic_lr(batch_num, d_model, 10_000)
-    lr = 1e-5
-    torch.autograd.set_detect_anomaly(True)
+    lr = lr_scale_factor * utils.get_cyclic_lr(batch_num, d_model, 1000)
     for g in opt.param_groups:
         g['lr'] = lr
 
@@ -92,14 +95,12 @@ def train(model, opt, ds, tok, loss_func, bs, num_batches, seq_len, model_params
 
     start_time = datetime.datetime.now()
 
-    samples_done = model_params['samples_done']
+    samples_done = 0 #model_params['samples_done']
     print(f'samples_done: {samples_done}')
-
     accumulation_counter = 0
-
     while batch_num < start_batch_num + num_batches:
         # load sample
-        combined = data_utils.get_batch(ds, tok, bs, samples_done, seq_len + 1)  # combined is bs x (L + 1)
+        combined = data_utils.get_chat_batch(ds, bs, samples_done)  # combined is bs x (L + 1)
         samples_done += 1
 
         src = combined[:, :-1].to(device)  # bs x L
@@ -134,7 +135,6 @@ def train(model, opt, ds, tok, loss_func, bs, num_batches, seq_len, model_params
             log_data = {}
             file_id = model_params['id']
             log_data['batch_num'] = batch_num
-            log_data['samples_done'] = samples_done
             log_data['total_seq'] = total_sequences
             log_data['lr'] = lr
             log_data['current_loss'] = current_loss
@@ -151,10 +151,10 @@ def train(model, opt, ds, tok, loss_func, bs, num_batches, seq_len, model_params
             start_time = datetime.datetime.now()
 
         # update learning rate
-        # if (accumulation_counter + 1) % config.update_lr_every == 0:
-        #     lr = lr_scale_factor * utils.get_cyclic_lr(batch_num, d_model, 10_000)
-        #     for g in opt.param_groups:
-        #         g['lr'] = lr
+        if (accumulation_counter + 1) % config.update_lr_every == 0:
+            lr = lr_scale_factor * utils.get_cyclic_lr(batch_num, d_model, 10000)
+            for g in opt.param_groups:
+                g['lr'] = lr
 
         # save the model
         if (accumulation_counter + 1) % config.save_every == 0:
@@ -179,18 +179,15 @@ def main():
     torch.manual_seed(0)
 
     # Load the dataset
-    LOAD_DS = True
-    if LOAD_DS:
-        ds = data_utils.load_book_ds(config.book_ds_file)
-    else:
-        ds = data_utils.create_book_ds(config.book_ds_size)
-    # Load the tokenizer
+    ds = data_utils.load_chat_ds(config.chat_ds_file)
     tok = tokenizer.load_tokenizer()
 
     # Demo the tokenizer
     tokenizer.tokenizer_test(tok)
 
-    # Get the vocab size. +1 is due to [PAD] token
+    # Get the vocab size. +1 is due to [PAD] token. For whatever reason adding tokens after training
+    # does not grow vocab size.  So we need to add +1 here manually
+
     vocab_size = tok.vocab_size + 1
 
     # Set the LOAD flag to True to load either latest model or a specified model
@@ -199,10 +196,10 @@ def main():
 
     if LOAD:
         # Initialize the file variable as None
-        file = None
+        file = config.model_directory + "model-88319-20230204-234856"
 
         # Uncomment the next line to load a specific file
-        #file = config.model_directory + "model-88319-20230204-234856"
+        # file = config.model_directory + "model-60108-20230126-174437"
 
         # If no file is specified, get the most recent file in the specified directory
         if file is None:
@@ -240,37 +237,7 @@ def main():
 
 main()
 
-# Load the tokenizer
-#tok = tokenizer.load_tokenizer()
-
-# Demo the tokenizer
-#tokenizer.tokenizer_test(tok)
-
-# Get the vocab size. +1 is due to [PAD] token
-#vocab_size = tok.vocab_size + 1
-import copy
-
-
-# print('Generating a new model to train.')
-# model, opt, model_params = utils.default_model(vocab_size)
-# model_params['batch_num'] = 0
-# model_params['samples_done'] = 0
-
-
-#model.double()
-# ds = data_utils.load_book_ds(config.book_ds_file)
-# loss = nn.CrossEntropyLoss()
-# bs=16
-# num_batches = 4
-# seq_len = 256
-# model, opt, model_params = utils.load_most_recent_model()
-# train(model, opt, ds, tok, loss, bs, num_batches, seq_len, model_params)
-
-#train(model, opt, ds, tok, loss, bs, num_batches, seq_len, model_params)
-
-
-
-
-# #model.double()
-#
-# train(model, opt, ds, tok, loss, bs, num_batches, seq_len, model_params)
+# tok = tokenizer.load_tokenizer()
+# # # ds = data_utils.load_chat_ds(config.chat_ds_file)
+# ds = data_utils.create_chat_data(tok)
+# data_utils.save_chat_ds(ds, config.chat_ds_file)

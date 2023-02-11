@@ -25,26 +25,22 @@ model_directory = '.\\models\\'
 batch_size = 16
 
 # zero gradients after every accumulate_size batches
-accumulate_size = 8
+accumulate_size = 5
 
 effective_bs = batch_size * accumulate_size
 
 # total number of batches for training
 num_batches = 500000
 
-# path for dataset
-ds_path = "wikipedia"
-ds_file = "20220301.en"
-
 # tokenizer file path
-tok_file = "./data/tokenizer-32768.json"
+tok_file = "../shared_data/tokenizers/tokenizer-32768.json"
 
 # directory for storing log files
 log_directory = "./logs/"
 log_file = "log.txt"
 
 # frequency at which model is saved during training
-save_every = 1000 * accumulate_size
+save_every = 100 * accumulate_size
 
 # frequency at which output is generated during training
 output_every = 20 * accumulate_size
@@ -55,10 +51,6 @@ batch_scale_factor = 1
 
 eval_every = 500 * accumulate_size
 
-book_path = "D:\\data sets\\book3\\books3.tar\\books3\\books3\\the-eye.eu\\public\\Books\\Bibliotik\\"
-book_ds_size = 400_000  #2_000_000
-print('Including config for transformer-book')
+print('Including config for transformer-chatbot')
 
-book_ds_file = './data/book_train2.pkl'
-valid_ds_file = './data/book_valid2.pkl'
-test_ds_file = './data/test_valid2.pkl'
+chat_ds_file = './data/chat_train.pkl'

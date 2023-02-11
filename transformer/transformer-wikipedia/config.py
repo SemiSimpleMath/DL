@@ -24,11 +24,6 @@ model_directory = '.\\models\\'
 # batch size for training
 batch_size = 16
 
-# zero gradients after every accumulate_size batches
-accumulate_size = 10
-
-effective_bs = batch_size * accumulate_size
-
 # total number of batches for training
 num_batches = 500000
 
@@ -43,12 +38,21 @@ tok_file = "../shared_data/tokenizers/tokenizer-32768.json"
 log_directory = "./logs/"
 log_file = "log.txt"
 
-# frequency at which model is saved during training
-save_every = 1000
 
-# frequency at which output is generated during training
-output_every = 200
+# zero gradients after every accumulate_size batches
+accumulate_size = 4
 
 # frequency at which learning rate is updated during training
 lr_step = accumulate_size
 batch_scale_factor = 1
+
+update_lr_every = accumulate_size
+# frequency at which model is saved during training
+save_every = 100 * accumulate_size
+
+# frequency at which output is generated during training
+output_every = 20 * accumulate_size
+
+# frequency at which learning rate is updated during training
+
+eval_every = 500 * accumulate_size

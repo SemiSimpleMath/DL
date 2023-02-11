@@ -37,7 +37,7 @@ ds_path = "wikipedia"
 ds_file = "20220301.en"
 
 # tokenizer file path
-tok_file = "./data/tokenizer-32768.json"
+tok_file = "../shared_data/tokenizers/tokenizer-32768.json"
 
 # directory for storing log files
 log_directory = "./logs/"
@@ -59,6 +59,6 @@ book_path = "D:\\data sets\\book3\\books3.tar\\books3\\books3\\the-eye.eu\\publi
 book_ds_size = 400_000  #2_000_000
 print('Including config for transformer-book')
 
-book_ds_file = './data/book_train2.pkl'
-valid_ds_file = './data/book_valid2.pkl'
-test_ds_file = './data/test_valid2.pkl'
+book_ds_file = './../shared_data/data_sets/book_train2.pkl'
+valid_ds_file = './../shared_data/data_sets/bbook_valid2.pkl'
+test_ds_file = './../shared_data/data_sets/test_valid2.pkl'
