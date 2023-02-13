@@ -3,7 +3,6 @@ from tokenizers.pre_tokenizers import Whitespace
 from tokenizers.trainers import BpeTrainer
 from transformers import GPT2TokenizerFast, AutoTokenizer
 
-import config
 
 from tokenizers import (
     decoders,
@@ -93,8 +92,8 @@ def train_tokenizer():
     return wrapped_tokenizer
 
 
-def load_tokenizer():
-    toke = Tokenizer.from_file(config.tok_file)
+def load_tokenizer(tok_file):
+    toke = Tokenizer.from_file(tok_file)
     toke.decoder = decoders.ByteLevel()
     tok = GPT2TokenizerFast(tokenizer_object=toke)
     tok.add_special_tokens({'pad_token': '[PAD]'})

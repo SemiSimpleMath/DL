@@ -3,12 +3,11 @@ import torch.nn as nn
 import os
 import time
 import math
-import config
 from torch.autograd import Variable
 from transformer_libs import decoder
 import random
 import numpy as np
-
+import itertools
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -36,8 +35,7 @@ def optimizer_to(optim, device):
                         subparam._grad.data = subparam._grad.data.to(device)
 
 
-def log(file_id, log_data, log_screen=True, log_file=True):
-    path = config.log_directory
+def log(file_id, log_data, path, log_screen=True, log_file=True):
     file = f"log{file_id}.txt"
     if log_file:
         with open(path + file, "a") as f:
@@ -45,13 +43,13 @@ def log(file_id, log_data, log_screen=True, log_file=True):
                 f.write(f'{k}:{v}\n')
                 if log_screen:
                     print(f'{k}: {v}')
-            print("----------------------------------------------------------------------------------------------------\n")
+            print(
+                "----------------------------------------------------------------------------------------------------\n")
     else:
         for k, v in log_data.items():
             if log_screen:
                 print(f'{k}: {v}')
         print("----------------------------------------------------------------------------------------------------\n")
-
 
 
 def most_recent_file(directory):
@@ -96,7 +94,47 @@ def get_pe(seq_len, d_model):
     return Variable(pe, requires_grad=False)
 
 
-def load_model(file, cuda=True):
+def load_model(file, model_params, train_params, lr_params, cuda=True):
+    checkpoint = torch.load(file)
+
+    num_blocks = model_params['num_blocks'] = checkpoint['num_blocks']
+    d_model = model_params['d_model'] = checkpoint['d_model']
+    d_middle = model_params['d_middle'] = checkpoint['d_middle']
+    vocab_size = model_params['vocab_size'] = checkpoint['vocab_size']
+    dropout = model_params['dropout'] = checkpoint['dropout']
+    h = model_params['h'] = checkpoint['h']
+    d_q = model_params['d_q'] = checkpoint['d_q']
+    d_k = model_params['d_k'] = checkpoint['d_k']
+    d_v = model_params['d_v'] = checkpoint['d_v']
+
+    model_params['id'] = checkpoint['id']
+    if 'samples_done' in checkpoint:
+        model_params['samples_done'] = checkpoint['samples_done']
+    else:
+        model_params['samples_done'] = 0
+    if 'batch_num' in checkpoint:
+        model_params['batch_num'] = checkpoint['batch_num']
+    else:
+        print("Model has no batch_num")
+    if 'weight_decay' in checkpoint:
+        model_params['weight_decay'] = checkpoint['weight_decay']
+    if 'betas' in checkpoint:
+        model_params['betas'] = checkpoint['betas']
+    lr_params['lr'] = 2.5e-4
+
+    model = decoder.Decoder(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v, use_weight_tying=True)
+
+    model.load_state_dict(checkpoint['model_state_dict'])
+    if cuda:
+        model.cuda(device)
+    opt = model.configure_optimizers(model_params, lr_params)
+    opt.load_state_dict(checkpoint['optimizer_state_dict'])
+    if cuda:
+        optimizer_to(opt, device)
+
+    return model, opt, model_params, train_params, lr_params
+
+def load_model_inference(file, cuda=False):
     checkpoint = torch.load(file)
     model_params = {}
     num_blocks = model_params['num_blocks'] = checkpoint['num_blocks']
@@ -118,45 +156,40 @@ def load_model(file, cuda=True):
         model_params['batch_num'] = checkpoint['batch_num']
     else:
         print("Model has no batch_num")
+    if 'weight_decay' in checkpoint:
+        model_params['weight_decay'] = checkpoint['weight_decay']
+    if 'betas' in checkpoint:
+        model_params['betas'] = checkpoint['betas']
+
+
     model = decoder.Decoder(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v, use_weight_tying=True)
-    #model = paralleldecoder.ParallelDecoder(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v)
+
     model.load_state_dict(checkpoint['model_state_dict'])
     if cuda:
         model.cuda(device)
-    opt = torch.optim.AdamW(model.parameters(), lr=1, betas=(0.9, 0.98), eps=1e-9)
-    opt.load_state_dict(checkpoint['optimizer_state_dict'])
-    if cuda:
-        optimizer_to(opt, device)
-
-    return model, opt, model_params
 
 
-def default_model(vocab_size):
-    model_params = {}
-    num_blocks = model_params['num_blocks'] = config.model_params['num_blocks']
-    d_model = model_params['d_model'] = config.model_params['d_model']
-    d_middle = model_params['d_middle'] = config.model_params['d_middle']
-    dropout = model_params['dropout'] = config.model_params['dropout']
-    h = model_params['h'] = config.model_params['h']
-    d_k = model_params['d_k'] = config.model_params['d_k']
-    d_q = model_params['d_q'] = config.model_params['d_q']
-    d_v = model_params['d_v'] = config.model_params['d_v']
-    model_params['vocab_size'] = vocab_size
-    model_params['samples_done'] = 0
-    model_params['id'] = random.randint(0, 100000)
-    model = decoder.Decoder(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v, use_weight_tying=True)
-    #model = paralleldecoder.ParallelDecoder(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v)
+    return model, model_params
+
+def default_model(model_params, train_params, lr_params):
+    vocab_size = model_params['vocab_size']
+    num_blocks = model_params['num_blocks']
+    d_model = model_params['d_model']
+    d_middle = model_params['d_middle']
+    dropout = model_params['dropout']
+    h = model_params['h']
+    d_k = model_params['d_k']
+    d_q = model_params['d_q']
+    d_v = model_params['d_v']
+    weight_tying = model_params['weight_tying']
+    model = decoder.Decoder(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v, weight_tying)
     model.cuda()
-    for p in model.parameters():
-        if p.dim() > 1:
-            nn.init.xavier_uniform_(p)
-    opt = torch.optim.AdamW(model.parameters(), lr=2.5e-4, betas=(0.9, 0.98), eps=1e-9)
-    optimizer_to(opt, device)
-    return model, opt, model_params
+    opt = model.configure_optimizers(model_params, lr_params)
+    return model, opt, model_params, train_params, lr_params
 
 
-def save_model(model, opt, model_params):
-    path = f'.\models\model-{model_params["id"]}-' + time.strftime("%Y%m%d-%H%M%S")
+def save_model(model, opt, path, model_params, train_params, lr_params):
+    file = f'{path}-{model_params["id"]}-' + time.strftime("%Y%m%d-%H%M%S")
     torch.save({
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': opt.state_dict(),
@@ -172,9 +205,9 @@ def save_model(model, opt, model_params):
         'batch_num': model_params['batch_num'],
         'id': model_params['id'],
         'samples_done': model_params['samples_done'],
-    }, path)
+    }, file)
 
-    print(f"Saving model: {path}")
+    print(f"Saved model: {file}")
 
 
 def loss_by_position(pred, target, bs, seq_len, loss):
@@ -190,16 +223,19 @@ def loss_by_position(pred, target, bs, seq_len, loss):
     return loss_by_pos
 
 
-def get_lr(b, d_model):
+def get_lr(lr_params):
     # lr schedule
     # batch_size factor is to compensate that smaller batches result in bigger swings
     # correspondigly lr should be smaller
 
-    bsf = config.batch_scale_factor
+    b = lr_params['b']
+    d_model = lr_params['d_model']
+    bsf = lr_params['stepsize']
 
     warmup_steps = 4000
     lr = bsf * d_model ** (-.5) * min((b + 1) ** (-.5), (b + 1) * warmup_steps ** (-1.5))
     return lr
+
 
 # This implements cyclic lr
 def relative(batch_num, stepsize, scaler):
@@ -207,15 +243,19 @@ def relative(batch_num, stepsize, scaler):
     x = abs(batch_num / stepsize - 2 * cycle + 1)
     return max(0, (1 - x)) * scaler
 
+
 def cyclical_lr(stepsize, batch_num, min_lr=2.e-5, max_lr=2.5e-4):
     # Scaler: we can adapt this if we do not want the triangular CLR
     scaler = 1
     return min_lr + (max_lr - min_lr) * relative(batch_num, stepsize, scaler)
 
 
-def get_cyclic_lr(b, d_model, stepsize):
-    min_lr =  1/6 * d_model ** (-.5) * (b + 1) ** (-.5)
-    max_lr =   d_model ** (-.5) * (b + 1) ** (-.5)
+def get_cyclic_lr(lr_params):
+    b = lr_params['b']
+    d_model = lr_params['d_model']
+    stepsize = lr_params['stepsize']
+    min_lr = 1 / 6 * d_model ** (-.5) * (b + 1) ** (-.5)
+    max_lr = d_model ** (-.5) * (b + 1) ** (-.5)
     cl = cyclical_lr(stepsize, b, min_lr, max_lr)
 
     warmup_steps = 4000
@@ -224,13 +264,47 @@ def get_cyclic_lr(b, d_model, stepsize):
     return min(cl, warmup_lr)
 
 
-def load_most_recent_model():
-    directory = config.model_directory
-    file = most_recent_file(directory)
+def load_most_recent_model(model_dir):
+    file = most_recent_file(model_dir)
     print(f'Loading most recent model: {file}')
     return load_model(file)
 
-def print_model_params(model_params):
-    for k, v in model_params.items():
+
+def print_params(params):
+    for k, v in params.items():
         print(f"{k}: {v}")
+
+
+def constant_lr(lr_params):
+    return lr_params['lr']
+
+
+def create_model(LOAD, directory, model_params, train_params, lr_params, file=None):
+    # Set the LOAD flag to True to load either latest model or a specified model
+    # Set the LOAD flag to False to generate a default model
+    # if the LOAD flag is false and file is not None then a specific file is loaded
+    # directory is the model directory
+
+    if LOAD:
+        # Initialize the file variable as None
+        file = None
+
+        # Uncomment the next line to load a specific file
+        # file = config.model_directory + "model-88319-20230204-234856"
+
+        # If no file is specified, get the most recent file in the specified directory
+        if file is None:
+            file = most_recent_file(directory)
+            print(f'Loading model: {file}')
+
+        # Load the model, optimizer, and model parameters from the specified file
+        model, opt, model_params, train_params, lr_params = load_model(file, model_params, train_params, lr_params)
+    else:
+        # If LOAD is set to False, generate a new model to train
+        print('Generating a new model to train.')
+        model, opt, model_params, train_params, lr_params = default_model(model_params, train_params, lr_params)
+        train_params['batch_num'] = 0
+        train_params['samples_done'] = 0
+
+    return model, opt, model_params, train_params, lr_params
 

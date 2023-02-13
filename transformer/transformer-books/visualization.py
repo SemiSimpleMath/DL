@@ -1,6 +1,3 @@
-import sys
-# setting path
-sys.path.append('../transformer_libs')
 from matplotlib import pyplot as plt
 from transformer_libs import utils
 from collections import defaultdict
