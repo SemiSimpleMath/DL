@@ -58,7 +58,9 @@ class MultiHeadAttentionModule(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, q, k, v):
-        # collect all the heads together and project
+        # collect all the heads together and project. Each head has shape (b, L, d_v)
+        # the concatenated shape is (b, L, h * d_v)
+        # This is projected to (b, L, d_v) This is the end result of the MHAM.
         return self.dropout(self.l_proj(torch.cat([layer(q, k, v) for layer in self.a_modules], dim=-1)))
 
 

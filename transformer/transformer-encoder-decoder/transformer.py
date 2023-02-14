@@ -204,7 +204,7 @@ class Decoder(nn.Module):
         for layer in self.layers:
             x = layer(x, y, dec_mask)
         x = self.l1(x)
-        # x = F.softmax(self.l1(x), -1) for crossentropy we do not want to take softmax
+
         return x
 
 

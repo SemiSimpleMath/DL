@@ -20,7 +20,7 @@ def main():
     tok_file = config.tok_file
     tok = tokenizer.load_tokenizer(tok_file)
 
-    prompt = "Albert Einstein loved to"
+    prompt = "Jukka Virtanen is a Finnish"
     print(f'Prompt: {prompt}')
     text_prompt = prompt
     prompt = data_utils.text_to_model_input(prompt, tok)

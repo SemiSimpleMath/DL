@@ -29,7 +29,7 @@ y1 = d1['current_loss']
 # y3 = d3['current_loss']
 
 high = len(x1)
-low = high - 100
+low = high - 500
 print (high)
 x1 = x1[low:high]
 y1 = y1[low:high]
