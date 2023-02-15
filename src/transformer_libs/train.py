@@ -62,11 +62,9 @@ class Train:
 
         while batch_num < start_batch_num + num_batches:
             # load sample
-            combined = self.dl_func(self.ds, self.tok, bs, samples_done, seq_len)  # combined is bs x (L + 1)
+            src, target = self.dl_func(self.ds, self.tok, bs, samples_done, seq_len)  # combined is bs x (L + 1)
             samples_done += 1
 
-            src = combined[:, :-1].to(device)  # bs x L
-            target = combined[:, 1:].to(device)  # bs x L
             # positional encoding
             pe = utils.get_pe(src.size()[-1], d_model).to(device)  # 1 x L x d_model
             # run through model

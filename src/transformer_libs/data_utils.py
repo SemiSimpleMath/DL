@@ -1,8 +1,10 @@
 import random
 import torch
 import numpy as np
+import torch.nn.functional as F
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 def text_to_token(text, tokenizer):
     output = tokenizer.encode(text)
@@ -48,9 +50,11 @@ def get_wiki_batch(ds, tok, bs, batches_done, L):
         print(sample.shape)
         print(sample)
     idx = starts.unsqueeze(-1) + torch.arange(min(L, firstpad.max()))
-    combined = torch.gather(sample, 1, idx).to(utils.device)
+    combined = torch.gather(sample, 1, idx).to(device)
+    src = combined[:, :-1].to(device)  # bs x L
+    target = combined[:, 1:].to(device)  # bs x L
+    return src, target
 
-    return combined
 
 def get_torch_batch(ds, tok, bs, batches_done, L):
     sample = tok(
@@ -68,9 +72,11 @@ def get_torch_batch(ds, tok, bs, batches_done, L):
         print(sample.shape)
         print(sample)
     idx = starts.unsqueeze(-1) + torch.arange(min(L, firstpad.max()))
-    combined = torch.gather(sample, 1, idx).to(utils.device)
+    combined = torch.gather(sample, 1, idx).to(device)
+    src = combined[:, :-1].to(device)  # bs x L
+    target = combined[:, 1:].to(device)  # bs x L
+    return src, target
 
-    return combined
 
 def get_batch(ds, tok, bs, samples_done, L):
     low = (samples_done * bs) % len(ds)
@@ -90,9 +96,11 @@ def get_batch(ds, tok, bs, samples_done, L):
         return_attention_mask=False,
         return_tensors="pt"
     ).input_ids
-    combined = sample[:,:L]
+    combined = sample[:, :L]
+    src = combined[:, :-1].to(device)  # bs x L
+    target = combined[:, 1:].to(device)  # bs x L
+    return src, target
 
-    return combined
 
 def get_chat_batch(ds, bs, samples_done):
     low = (samples_done * bs) % len(ds)
@@ -105,8 +113,9 @@ def get_chat_batch(ds, bs, samples_done):
         print("low, high", (low, high))
 
     combined = torch.Tensor(ds[low:high]).to(torch.int64)
-
-    return combined
+    src = combined[:, :-1].to(device)  # bs x L
+    target = combined[:, 1:].to(device)  # bs x L
+    return src, target
 
 
 def load_book(file):
@@ -135,7 +144,11 @@ def remove_bad_chars(s):
     bad_chars = {ord('/'): None, ord('\n'): " "}
     s = s.translate(bad_chars)
     return s
+
+
 import re
+
+
 def validate_line(line):
     x = re.search(r"[^\w\d\s,\.:\'\?!;-]|[_]", line)
     if x:
@@ -143,10 +156,11 @@ def validate_line(line):
     else:
         return True
 
+
 def process_string(b, max_seq_len):
     b = ''.join(b)
     b = b.split('.')
-    b = [x+'.' for x in b]
+    b = [x + '.' for x in b]
     seq = ''
     result = []
     total_words = 0
@@ -188,42 +202,45 @@ def create_book_ds(db_size=100_000):
         ds.extend(b)
         count += 1
         if (count + 1) % 100 == 0:
-            print("percent done: ", len(ds)/db_size)
+            print("percent done: ", len(ds) / db_size)
     random.shuffle(ds)
     return ds
 
 
 import pickle
 
+
 def save_ds(ds, file):
     open_file = open(file, "wb")
     pickle.dump(ds, open_file)
+
 
 def load_ds(file):
     print("Loading pickle file")
     with open(file, 'rb') as f:
         return pickle.load(f)
 
+
 def create_book_lists(ds_size):
     v_size = 100_000
     test_size = 100_000
 
     path = "C:\\Users\\semis\\IdeaProjects\\DL\\transformer\\transformer-books\\data\\"
-    s_file = path +"book_list2.pkl"
+    s_file = path + "book_list2.pkl"
     ds = create_book_ds(ds_size)
     ds = ds[:ds_size]
     #
     save_ds(ds, s_file)
     #
     file = path + "book_list2.pkl"
-    t_file = path +'book_train2.pkl'
-    v_file = path +'book_valid2.pkl'
+    t_file = path + 'book_train2.pkl'
+    v_file = path + 'book_valid2.pkl'
     test_file = path + 'book_test2.pkl'
     ds = load_ds(file)
     print(len(ds))
-    train = ds[:-v_size-test_size]
-    valid = ds[ds_size - (v_size+test_size): ds_size - v_size]
-    test = ds[ds_size- v_size:]
+    train = ds[:-v_size - test_size]
+    valid = ds[ds_size - (v_size + test_size): ds_size - v_size]
+    test = ds[ds_size - v_size:]
     save_ds(train, t_file)
     save_ds(valid, v_file)
     save_ds(test, test_file)
@@ -234,20 +251,23 @@ def create_book_lists(ds_size):
 
 import pandas as pd
 
+
 def save_chat_ds(ds, file):
     open_file = open(file, "wb")
     pickle.dump(ds, open_file)
+
 
 def load_ds(file):
     print("Loading pickle file")
     with open(file, 'rb') as f:
         return pickle.load(f)
 
+
 def create_chat_data(tok):
     df = pd.read_csv("./data/topical_chat.csv")
     pad = 32767
     eot = 0
-    conv_ds =[]
+    conv_ds = []
     overflow = []
     last_id = df['conversation_id'].tolist()[-1]
     for m_id in range(1, last_id):
@@ -262,7 +282,7 @@ def create_chat_data(tok):
                 conv.extend(tok_m)
             else:
                 overflow = tok_m
-                while(len(conv)) < 257:
+                while (len(conv)) < 257:
                     conv.append(pad)
                 conv_ds.append(conv)
                 conv = overflow[:]
@@ -273,12 +293,12 @@ def create_chat_data(tok):
                 conv = overflow[:]
                 overflow = []
         if len(conv) > 0:
-            while(len(conv)) < 257:
+            while (len(conv)) < 257:
                 conv.append(pad)
             conv_ds.append(conv)
 
-
     return conv_ds
+
 
 def create_wikipedia_ds(wiki_ds):
     ds = []
@@ -289,25 +309,25 @@ def create_wikipedia_ds(wiki_ds):
         ds.extend(b)
         count += 1
         if (count + 1) % 100 == 0:
-            print("percent done: ", len(ds)/len(wiki_ds['train']))
+            print("percent done: ", len(ds) / len(wiki_ds['train']))
 
     path = "C:\\Users\\semis\\IdeaProjects\\DL\\transformer\\shared_data\\"
-    s_file = path +"wiki_list.pkl"
+    s_file = path + "wiki_list.pkl"
 
     save_ds(ds, s_file)
     #
     file = path + "wiki_train.pkl"
-    t_file = path +'wiki_train.pkl'
-    v_file = path +'wiki_valid.pkl'
+    t_file = path + 'wiki_train.pkl'
+    v_file = path + 'wiki_valid.pkl'
     test_file = path + 'wiki_test.pkl'
     ds = load_ds(file)
     print(len(ds))
     v_size = 10_000
     test_size = 10_000
     ds_size = len(ds)
-    train = ds[:-v_size-test_size]
-    valid = ds[ds_size - (v_size+test_size): ds_size - v_size]
-    test = ds[ds_size- v_size:]
+    train = ds[:-v_size - test_size]
+    valid = ds[ds_size - (v_size + test_size): ds_size - v_size]
+    test = ds[ds_size - v_size:]
     save_ds(train, t_file)
     save_ds(valid, v_file)
     save_ds(test, test_file)
@@ -320,6 +340,31 @@ def load_wikipedia():
     from datasets import load_dataset
     ds = load_dataset("wikipedia", "20220301.en")
     return ds
+
+
+def get_sequence_batch(bs, seq_len, d_model):
+    seq_len = random.randint(1, seq_len)
+
+    r = torch.randint(1, d_model - 1, (bs, seq_len))
+
+    enc_src, dec_src, target = r.clone(), r.clone(), r.clone()
+
+    et = (d_model - 1) * torch.ones(bs, 1)
+    st = torch.zeros(bs, 1)
+
+    enc_src = torch.cat((enc_src, et), 1)
+    dec_src = torch.cat((st, dec_src.flip(1)), 1)
+    target = torch.cat((target.flip(1), et), 1).long()
+
+    enc_src = F.one_hot(enc_src.to(torch.int64), num_classes=d_model).float()
+    dec_src = F.one_hot(dec_src.to(torch.int64), num_classes=d_model).float()
+
+    enc_src = enc_src.to(device)
+    dec_src = dec_src.to(device)
+    target = target.to(device)
+
+    return enc_src, dec_src, target
+
 
 if __name__ == '__main__':
     None

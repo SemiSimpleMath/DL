@@ -1,7 +1,7 @@
 import config
 import torch
 import torch.nn as nn
-from transformer_libs import tokenizer
+import torch.nn.functional as F
 from transformer_libs import data_utils
 from transformer_libs import utils
 from transformer_libs import train
@@ -11,6 +11,15 @@ import random
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+
+
+# pred = transformer(enc_src, dec_src, pe, None, msk)
+
+
+
+
 
 
 def prepare_train_config():
@@ -24,26 +33,12 @@ def prepare_train_config():
 def main():
     torch.manual_seed(0)
 
-    # Load the dataset
-    ds = data_utils.load_ds(config.wiki_ds_file)
-    random.shuffle(ds)
-    # Load the tokenizer
-    tok_file = config.tok_file
-    tok = tokenizer.load_tokenizer(tok_file)
-
-    # Demo the tokenizer
-    tokenizer.tokenizer_test(tok)
-
-    # Get the vocab size. +1 is due to [PAD] token which we force to be the last token
-    vocab_size = tok.vocab_size + 1
-
     model_params, train_params, lr_params, config_params = prepare_train_config()
-    model_params['vocab_size'] = vocab_size
 
     # To load most recent model set LOAD flag to True
     LOAD = True
-    # file = None, To load a specific model uncomment this and set a file.
-    model, opt, model_params, train_params, lr_params = utils.create_model(LOAD, config_params['model_directory'],
+    # file = None To load a specific model uncomment this and set a file.
+    model, opt, model_params, train_params, lr_params = utils.create_transformer_model(LOAD, config_params['model_directory'],
                                                                            model_params, train_params, lr_params,
                                                                            file=None)
 
@@ -61,9 +56,10 @@ def main():
     dl_func = data_utils.get_batch
     lr_func = utils.constant_lr
 
+    tok, ds = None, None
+
     trainer = train.Train(model, opt, model_params, train_params, lr_params, config_params, tok, ds, loss_func, dl_func,
                           lr_func)
-    # eval_model(model, tok, loss, bs, 100, seq_len, model_params)
 
     trainer.train(50_000)
 

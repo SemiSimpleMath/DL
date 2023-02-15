@@ -8,7 +8,7 @@ from transformer_libs import decoder
 import random
 import numpy as np
 import itertools
-
+from transformer_libs import transformer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -305,6 +305,93 @@ def create_model(LOAD, directory, model_params, train_params, lr_params, file=No
         model, opt, model_params, train_params, lr_params = default_model(model_params, train_params, lr_params)
         train_params['batch_num'] = 0
         train_params['samples_done'] = 0
+
+    return model, opt, model_params, train_params, lr_params
+
+
+def create_transformer_model(LOAD, directory, model_params, train_params, lr_params, file=None):
+    # Set the LOAD flag to True to load either latest model or a specified model
+    # Set the LOAD flag to False to generate a default model
+    # if the LOAD flag is false and file is not None then a specific file is loaded
+    # directory is the model directory
+
+    if LOAD:
+        # Initialize the file variable as None
+        file = None
+
+        # Uncomment the next line to load a specific file
+        # file = config.model_directory + "model-88319-20230204-234856"
+
+        # If no file is specified, get the most recent file in the specified directory
+        if file is None:
+            file = most_recent_file(directory)
+            print(f'Loading model: {file}')
+
+        # Load the model, optimizer, and model parameters from the specified file
+        model, opt, model_params, train_params, lr_params = load_transformer(file, model_params, train_params, lr_params)
+    else:
+        # If LOAD is set to False, generate a new model to train
+        print('Generating a new model to train.')
+        model, opt, model_params, train_params, lr_params = default_transformer(model_params, train_params, lr_params)
+        train_params['batch_num'] = 0
+        train_params['samples_done'] = 0
+
+    return model, opt, model_params, train_params, lr_params
+
+def default_transformer(model_params, train_params, lr_params):
+    vocab_size = model_params['vocab_size']
+    num_blocks = model_params['num_blocks']
+    d_model = model_params['d_model']
+    d_middle = model_params['d_middle']
+    dropout = model_params['dropout']
+    h = model_params['h']
+    d_k = model_params['d_k']
+    d_q = model_params['d_q']
+    d_v = model_params['d_v']
+    model = transformer.Transformer (num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v)
+    model.cuda()
+    opt = model.configure_optimizers(model_params, lr_params)
+    return model, opt, model_params, train_params, lr_params
+
+
+def load_transformer(file, model_params, train_params, lr_params, cuda=True):
+    checkpoint = torch.load(file)
+
+    num_blocks = model_params['num_blocks'] = checkpoint['num_blocks']
+    d_model = model_params['d_model'] = checkpoint['d_model']
+    d_middle = model_params['d_middle'] = checkpoint['d_middle']
+    vocab_size = model_params['vocab_size'] = checkpoint['vocab_size']
+    dropout = model_params['dropout'] = checkpoint['dropout']
+    h = model_params['h'] = checkpoint['h']
+    d_q = model_params['d_q'] = checkpoint['d_q']
+    d_k = model_params['d_k'] = checkpoint['d_k']
+    d_v = model_params['d_v'] = checkpoint['d_v']
+
+    model_params['id'] = checkpoint['id']
+    if 'samples_done' in checkpoint:
+        model_params['samples_done'] = checkpoint['samples_done']
+    else:
+        model_params['samples_done'] = 0
+    if 'batch_num' in checkpoint:
+        model_params['batch_num'] = checkpoint['batch_num']
+    else:
+        print("Model has no batch_num")
+    if 'weight_decay' in checkpoint:
+        model_params['weight_decay'] = checkpoint['weight_decay']
+    if 'betas' in checkpoint:
+        model_params['betas'] = checkpoint['betas']
+    lr_params['lr'] = 2.5e-4
+
+
+    model = transformer.Transformer(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v)
+
+    model.load_state_dict(checkpoint['model_state_dict'])
+    if cuda:
+        model.cuda(device)
+    opt = model.configure_optimizers(model_params, lr_params)
+    opt.load_state_dict(checkpoint['optimizer_state_dict'])
+    if cuda:
+        optimizer_to(opt, device)
 
     return model, opt, model_params, train_params, lr_params
 
