@@ -38,7 +38,7 @@ y1 = y1[low:high]
 # y3 = y3[:high]
 
 plt.xlabel('Number of batches')
-plt.ylabel(f'Average loss over last {config.output_every// (config.accumulate_size)} batches')
+plt.ylabel(f'Average loss over  batches')
 
 x1 = list(map(float, x1))
 y1 = list(map(float, y1))

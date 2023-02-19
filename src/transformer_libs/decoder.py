@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-
+from transformer_libs import utils
 
 
 class NewGELU(nn.Module):
@@ -29,7 +29,9 @@ class FeedForward(nn.Module):
         return self.dropout(self.l_proj(self.NG(self.l_feed(x))))
 
 
-class AttentionModule(nn.Module):
+# This was my original implementation, however, it is possible to ditch this module
+# and apply attention to all the heads in parallel. See new implementation below
+class AttentionModule_old(nn.Module):
     def __init__(self, d_model, d_Q, d_K, d_V, dropout):
         super().__init__()
         self.Q = nn.Linear(d_model, d_Q, bias=False)
@@ -49,12 +51,12 @@ class AttentionModule(nn.Module):
         y = self.attention(self.Q(q), self.K(k), self.V(v))
         return y
 
-
-class MultiHeadAttentionModule(nn.Module):
+# the old way of doing MHAM
+class MultiHeadAttentionModule_old(nn.Module):
     def __init__(self, d_model, h, d_Q, d_K, d_V, dropout):
         super().__init__()
         self.l_proj = nn.Linear(h * d_V, d_model)
-        self.a_modules = nn.ModuleList(AttentionModule(d_model, d_Q, d_K, d_V, dropout) for _ in range(h))
+        self.a_modules = nn.ModuleList(AttentionModule_old(d_model, d_Q, d_K, d_V, dropout) for _ in range(h))
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, q, k, v):
@@ -62,6 +64,36 @@ class MultiHeadAttentionModule(nn.Module):
         # the concatenated shape is (b, L, h * d_v)
         # This is projected to (b, L, d_v) This is the end result of the MHAM.
         return self.dropout(self.l_proj(torch.cat([layer(q, k, v) for layer in self.a_modules], dim=-1)))
+
+
+class MultiHeadAttentionModule(nn.Module):
+    def __init__(self, d_model, h, d_Q, d_K, d_V, dropout):
+        super().__init__()
+        self.combined_qkv = nn.Linear(d_model, 3*d_model)
+        self.l_proj = nn.Linear(h * d_V, d_model)
+        self.a_modules = nn.ModuleList(AttentionModule_old(d_model, d_Q, d_K, d_V, dropout) for _ in range(h))
+        self.dropout = nn.Dropout(dropout)
+        self.h = h
+
+    def forward(self, x):
+        bs, L, d_model = x.size()  # batch size, sequence length, d_model
+        Q, K, V = self.combined_qkv(x).split(d_model, dim=2)
+        d_k = K.size(-1)
+
+        K = K.view(bs, L, self.h, d_model // self.h).transpose(1, 2)
+        Q = Q.view(bs, L, self.h, d_model // self.h).transpose(1, 2)
+        V = V.view(bs, L, self.h, d_model // self.h).transpose(1, 2)
+
+        scores = Q @ K.transpose(-2, -1) / np.sqrt(d_k)
+        scores += torch.triu(torch.ones_like(scores) * float("-inf"), diagonal=1)  # mask subsequent positions
+        attn = F.softmax(scores, dim=-1)
+        attn = self.dropout(attn)
+        attn = attn @ V
+        attn = attn.transpose(1, 2).contiguous().view(bs, L, d_model)  # collect all heads together
+        # output projection
+        attn = self.dropout(self.l_proj(attn))
+        return attn
+
 
 
 class DecoderBlock(nn.Module):
@@ -80,7 +112,7 @@ class DecoderBlock(nn.Module):
         x: decoder input
         """
         normed_x = self.norm1(x)
-        x = x + self.multi_head_masked(normed_x, normed_x, normed_x)
+        x = x + self.multi_head_masked(normed_x)
         normed_x = self.norm2(x)
         x = x + self.feed_forward(normed_x)
 
@@ -108,8 +140,9 @@ class Decoder(nn.Module):
             if pn.endswith('c_proj.weight'):
                 torch.nn.init.normal_(p, mean=0.0, std=0.02 / np.sqrt(2 * num_blocks))
 
-    def forward(self, dec_inp, pe):
+    def forward(self, dec_inp):
         x = self.embedding(dec_inp) * np.sqrt(self.d_model)  # bs x L x d_model
+        pe = utils.get_pe(x)
         x = self.dropout(x + pe)
         for layer in self.layers:
             x = layer(x)

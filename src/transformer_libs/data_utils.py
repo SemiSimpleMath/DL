@@ -7,7 +7,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def text_to_token(text, tokenizer):
-    output = tokenizer.encode(text)
+    output = tokenizer.encode(text).ids
     return output
 
 
@@ -34,6 +34,193 @@ def text_to_model_input(text, tokenizer):
     return torch.LongTensor(tokens)
 
 
+class BaseDataLoader:
+    def __init__(self, bs, samples_done, params):
+        self.bs = bs
+        self.samples_done = samples_done
+        for key, value in params.items():
+            setattr(self, key, value)
+
+    def update(self, params):
+        for key, value in params.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+
+    def __call__(self):
+        src = None
+        target = None
+        return src, target
+
+
+# wikipedia dl
+class WikipediaDL(BaseDataLoader):
+    def __init__(self, bs, samples_done, params):
+        super().__init__(bs, samples_done, params)
+        self.ds = None
+        self.tok = None
+        self.L = None
+        for key, value in params.items():
+            setattr(self, key, value)
+
+    def __call__(self):
+        low = (self.samples_done * self.bs) % len(self.ds)
+        high = ((self.samples_done + 1) * self.bs) % len(self.ds)
+
+        if low > high:
+            sample = self.ds[low:] + self.ds[:high]
+        else:
+            sample = self.ds[low:high]
+
+        sample = self.tok.get_tok()(
+            sample,
+            padding=True,
+            truncation=True,
+            return_token_type_ids=False,
+            return_attention_mask=False,
+            return_tensors="pt"
+        ).input_ids
+
+        if (self.samples_done + 1) % 1000 == 0:
+            total_seq = self.samples_done * self.bs * self.L
+            print(f"\n***** Epoch progress: {total_seq/len(self.ds)} ***** \n")
+
+        combined = sample[:, :self.L]
+        src = combined[:, :-1].to(device)  # bs x L
+        target = combined[:, 1:].to(device)  # bs x L
+        return src, target
+
+
+class BooksDL(BaseDataLoader):
+    def __init__(self, bs, samples_done, params):
+        super().__init__(bs, samples_done, params)
+        self.ds = None
+        self.tok = None
+        self.L = None
+        for key, value in params.items():
+            setattr(self, key, value)
+
+    def __call__(self):
+        low = (self.samples_done * self.bs) % len(self.ds)
+        high = ((self.samples_done + 1) * self.bs) % len(self.ds)
+
+        if low > high:
+            sample = self.ds[low:] + self.ds[:high]
+        else:
+            sample = self.ds[low:high]
+
+        sample = self.tok.get_tok()(
+            sample,
+            padding=True,
+            truncation=True,
+            return_token_type_ids=False,
+            return_attention_mask=False,
+            return_tensors="pt"
+        ).input_ids
+
+        if (self.samples_done + 1) % 1000 == 0:
+            total_seq = self.samples_done * self.bs * self.L
+            print(f"\n***** Epoch progress: {total_seq/len(self.ds)} ***** \n")
+
+        combined = sample[:, :self.L]
+        src = combined[:, :-1].to(device)  # bs x L
+        target = combined[:, 1:].to(device)  # bs x L
+        return src, target
+
+
+class ChatBotDL(BaseDataLoader):
+    def __init__(self, bs, samples_done, params):
+        super().__init__(bs, samples_done, params)
+        self.ds = None
+        self.tok = None
+        self.L = None
+        for key, value in params.items():
+            setattr(self, key, value)
+
+    def __call__(self):
+        low = (self.samples_done * self.bs) % len(self.ds)
+        high = ((self.samples_done + 1) * self.bs) % len(self.ds)
+
+        if low > high:
+            sample = self.ds[low:] + self.ds[:high]
+        else:
+            sample = self.ds[low:high]
+
+        sample = self.tok.get_tok()(
+            sample,
+            padding=True,
+            truncation=True,
+            return_token_type_ids=False,
+            return_attention_mask=False,
+            return_tensors="pt"
+        ).input_ids
+        combined = sample[:, :self.L]
+        src = combined[:, :-1].to(device)  # bs x L
+        target = combined[:, 1:].to(device)  # bs x L
+        return src, target
+
+# This is a data loader for the transformer
+# It is specialized for the task of reversing a sequence of numbers
+class TransformerSeqDL(BaseDataLoader):
+    def __init__(self, bs, samples_done, params):
+        super().__init__(bs, samples_done, params)
+        self.max_seq_len = None
+        self.vocab_size = None
+        for key, value in params.items():
+            setattr(self, key, value)
+
+    def __call__(self):
+        seq_len = random.randint(1, self.max_seq_len)
+        vocab_size = self.vocab_size
+        bs = self.bs
+        r = torch.randint(1, vocab_size - 1, (bs, seq_len))
+
+        enc_src, dec_src, target = r.clone(), r.clone(), r.clone()
+
+        et = (vocab_size - 1) * torch.ones(bs, 1)
+        st = torch.zeros(bs, 1)
+
+        enc_src = torch.cat((enc_src, et), 1).long()
+        dec_src = torch.cat((st, dec_src.flip(1)), 1).long()
+        target = torch.cat((target.flip(1), et), 1).long()
+
+        return (enc_src, dec_src), target
+
+
+# DL for next word Shakespeare generation
+class ShakespeareDL(BaseDataLoader):
+    def __init__(self, bs, samples_done, params):
+        super().__init__(bs, samples_done, params)
+        self.ds = None
+        self.L = None
+        self.total_sequences = 0
+        self.samples_done = samples_done
+        for key, value in params.items():
+            setattr(self, key, value)
+
+    def __call__(self):
+        low = (self.samples_done * (self.bs * self.L)) % len(self.ds)
+        high = ((self.samples_done + 1) * (self.bs * self.L)) % len(self.ds)
+
+        if low > high:
+            sample = torch.cat([torch.Tensor(self.ds[low:]), torch.Tensor(self.ds[:high])], dim=-1)
+            sample = sample.long()
+
+        else:
+            sample = self.ds[low:high]
+            sample = torch.Tensor(sample).long()
+
+        if (self.samples_done + 1) % 1000 == 0:
+            total_seq = self.samples_done * self.bs * self.L
+            print(f"\n***** Epoch progress: {total_seq/len(self.ds)} *****\n")
+
+        self.total_sequences += self.bs * self.L
+        sample = sample.view(self.bs, self.L)
+        combined = sample[:, :self.L]
+        src = combined[:, :-1].to(device)  # bs x L
+        target = combined[:, 1:].to(device)  # bs x L
+        return src, target
+
+
 def get_wiki_batch(ds, tok, bs, batches_done, L):
     sample = tok(
         ds['train'][batches_done * bs: (batches_done + 1) * bs]['text'],
@@ -54,69 +241,6 @@ def get_wiki_batch(ds, tok, bs, batches_done, L):
     src = combined[:, :-1].to(device)  # bs x L
     target = combined[:, 1:].to(device)  # bs x L
     return src, target
-
-
-def get_torch_batch(ds, tok, bs, batches_done, L):
-    sample = tok(
-        ds['train'][batches_done * bs: (batches_done + 1) * bs]['text'],
-        padding=True,
-        truncation=True,
-        return_token_type_ids=False,
-        return_attention_mask=False,
-        return_tensors="pt"
-    ).input_ids
-    firstpad = sample.argmax(dim=-1)
-    starts = (torch.rand(bs) * torch.clamp(firstpad - L + 1, min=0).to(torch.float)).to(torch.int64)
-    if firstpad.max() < L:
-        print(f"firstpad.max() < L! {firstpad.max()} {L}")
-        print(sample.shape)
-        print(sample)
-    idx = starts.unsqueeze(-1) + torch.arange(min(L, firstpad.max()))
-    combined = torch.gather(sample, 1, idx).to(device)
-    src = combined[:, :-1].to(device)  # bs x L
-    target = combined[:, 1:].to(device)  # bs x L
-    return src, target
-
-
-def get_batch(ds, tok, bs, samples_done, L):
-    low = (samples_done * bs) % len(ds)
-    high = ((samples_done + 1) * bs) % len(ds)
-
-    if low > high:
-        print("low, high", (low, high))
-        low, high = high, low
-        high = low + bs
-        print("low, high", (low, high))
-
-    sample = tok(
-        ds[low: high],
-        padding=True,
-        truncation=True,
-        return_token_type_ids=False,
-        return_attention_mask=False,
-        return_tensors="pt"
-    ).input_ids
-    combined = sample[:, :L]
-    src = combined[:, :-1].to(device)  # bs x L
-    target = combined[:, 1:].to(device)  # bs x L
-    return src, target
-
-
-def get_chat_batch(ds, bs, samples_done):
-    low = (samples_done * bs) % len(ds)
-    high = ((samples_done + 1) * bs) % len(ds)
-
-    if low > high:
-        print("low, high", (low, high))
-        low, high = high, low
-        high = low + bs
-        print("low, high", (low, high))
-
-    combined = torch.Tensor(ds[low:high]).to(torch.int64)
-    src = combined[:, :-1].to(device)  # bs x L
-    target = combined[:, 1:].to(device)  # bs x L
-    return src, target
-
 
 def load_book(file):
     book = []
@@ -257,12 +381,6 @@ def save_chat_ds(ds, file):
     pickle.dump(ds, open_file)
 
 
-def load_ds(file):
-    print("Loading pickle file")
-    with open(file, 'rb') as f:
-        return pickle.load(f)
-
-
 def create_chat_data(tok):
     df = pd.read_csv("./data/topical_chat.csv")
     pad = 32767
@@ -366,5 +484,38 @@ def get_sequence_batch(bs, seq_len, d_model):
     return enc_src, dec_src, target
 
 
+def read_shakespeare_data(shakespeare_path):
+    df = pd.read_csv(shakespeare_path)
+
+    lines = df['PlayerLine'].tolist()
+    lines = [line + ' ' for line in lines]
+
+    # words = [x.split() for x in lines]
+    #
+    # result = []
+    #
+    # for word in words:
+    #     if len(word) > 2:
+    #         result.extend(word)
+    #
+    # final = []
+    # for w in result:
+    #     w = w.lower()
+    #     final.extend(re.findall(r"\w+|[^\w\s]", w, re.UNICODE))
+
+    return lines
+
+def create_shakespeare_ds(shakespeare_path, tok, file):
+    df = pd.read_csv(shakespeare_path)
+    lines = df['PlayerLine'].tolist()
+    result = []
+    for line in lines:
+        result.extend(tok.encode(line))
+    save_ds(result, file)
+    return result
+
+
+
+
 if __name__ == '__main__':
-    None
+    read_shakespeare_data("../../transformer/transformer-shakespeare/data/shakespeare/shakespeare.csv")

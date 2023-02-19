@@ -5,11 +5,12 @@ sys.path.append('../transformer_libs')
 import collections
 
 import torch
-import torch.nn.functional as F
 import config
-import tokenizer
-import data_utils
-import utils
+from transformer_libs import data_utils
+from transformer_libs import utils
+from transformer_libs import tokenizer
+
+
 
 # set device to cpu so i can train at same time on the gpu without running
 # out of gpu space
@@ -200,21 +201,32 @@ def lets_chat(n, search_function, model, model_params, width, max_depth, p_nuc, 
 
 
 def main():
-
     width = 3
-    p_nuc = .95
-    max_depth = 2
-    n = 80
-    tok = tokenizer.load_tokenizer()
+    p_nuc = .90
+    max_depth = 3
+    n = 100
+    # Load the tokenizer
+    tok_file = config.tok_file
+    tok = tokenizer.load_tokenizer(tok_file)
+
+    prompt = "We were all celebrating that Jouko"
+    print(f'Prompt: {prompt}')
 
 
-    directory = config.model_directory
-    file = utils.most_recent_file(directory)
-    model, opt, model_params = utils.load_model(file, False)
+    encoding = tok.encode("Let's test this tokenizer. Apple fruit")
+    print(encoding)
+
+
+    text_prompt = prompt
+    prompt = data_utils.text_to_model_input(prompt, tok)
+    prompt = prompt.unsqueeze(0)
+    prompt = prompt.to(device)
+
+    file = utils.most_recent_file(config.model_directory)
+    model, model_params = utils.load_model_inference(file, False)
     model.eval()
     # utils.to_cuda(model)
-
-
+    print(text_prompt, end=" ")
     lets_chat(n, beam_search_2, model, model_params, width, max_depth, p_nuc, tok)
 
 

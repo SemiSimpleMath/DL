@@ -7,8 +7,8 @@ from torch.autograd import Variable
 from transformer_libs import decoder
 import random
 import numpy as np
-import itertools
 from transformer_libs import transformer
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -68,22 +68,8 @@ def most_recent_file(directory):
     return latest_file
 
 
-def get_mask(size):
-    # Create a (size, size) tensor filled with ones
-    mask = torch.ones((size, size))
-
-    # Set the upper triangular elements to 0
-    mask = torch.triu(mask, diagonal=1)
-
-    # Convert the tensor to a boolean tensor
-    mask = mask.bool()
-
-    # Add an additional dimension of size 1 to the start of the tensor
-    mask = mask.unsqueeze(0)
-    return torch.logical_not(mask)
-
-
-def get_pe(seq_len, d_model):
+def get_pe(x):
+    b, seq_len, d_model = x.shape
     pe = torch.zeros(seq_len, d_model)
     position = torch.arange(0, seq_len).unsqueeze(1)
     div_term = torch.exp(torch.arange(0, d_model, 2) *
@@ -91,6 +77,8 @@ def get_pe(seq_len, d_model):
     pe[:, 0::2] = torch.sin(position * div_term)
     pe[:, 1::2] = torch.cos(position * div_term)
     pe = pe.unsqueeze(0)
+    if x.is_cuda:
+        pe = pe.cuda()
     return Variable(pe, requires_grad=False)
 
 
@@ -134,6 +122,7 @@ def load_model(file, model_params, train_params, lr_params, cuda=True):
 
     return model, opt, model_params, train_params, lr_params
 
+
 def load_model_inference(file, cuda=False):
     checkpoint = torch.load(file)
     model_params = {}
@@ -161,15 +150,14 @@ def load_model_inference(file, cuda=False):
     if 'betas' in checkpoint:
         model_params['betas'] = checkpoint['betas']
 
-
     model = decoder.Decoder(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v, use_weight_tying=True)
 
     model.load_state_dict(checkpoint['model_state_dict'])
     if cuda:
         model.cuda(device)
 
-
     return model, model_params
+
 
 def default_model(model_params, train_params, lr_params):
     vocab_size = model_params['vocab_size']
@@ -182,6 +170,9 @@ def default_model(model_params, train_params, lr_params):
     d_q = model_params['d_q']
     d_v = model_params['d_v']
     weight_tying = model_params['weight_tying']
+    model_params['id'] = random.randint(0, 1_000_000)
+    model_params['samples_done'] = 0
+    model_params['batch_num'] = 0
     model = decoder.Decoder(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v, weight_tying)
     model.cuda()
     opt = model.configure_optimizers(model_params, lr_params)
@@ -276,7 +267,7 @@ def print_params(params):
 
 
 def constant_lr(lr_params):
-    return lr_params['lr']
+    return lr_params['constant_lr']
 
 
 def create_model(LOAD, directory, model_params, train_params, lr_params, file=None):
@@ -328,7 +319,8 @@ def create_transformer_model(LOAD, directory, model_params, train_params, lr_par
             print(f'Loading model: {file}')
 
         # Load the model, optimizer, and model parameters from the specified file
-        model, opt, model_params, train_params, lr_params = load_transformer(file, model_params, train_params, lr_params)
+        model, opt, model_params, train_params, lr_params = load_transformer(file, model_params, train_params,
+                                                                             lr_params)
     else:
         # If LOAD is set to False, generate a new model to train
         print('Generating a new model to train.')
@@ -337,6 +329,7 @@ def create_transformer_model(LOAD, directory, model_params, train_params, lr_par
         train_params['samples_done'] = 0
 
     return model, opt, model_params, train_params, lr_params
+
 
 def default_transformer(model_params, train_params, lr_params):
     vocab_size = model_params['vocab_size']
@@ -348,7 +341,10 @@ def default_transformer(model_params, train_params, lr_params):
     d_k = model_params['d_k']
     d_q = model_params['d_q']
     d_v = model_params['d_v']
-    model = transformer.Transformer (num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v)
+    model_params['batch_num'] = 0
+    model_params['samples_done'] = 0
+    model_params['id'] = random.randint(0, 1_000_000)
+    model = transformer.Transformer(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v)
     model.cuda()
     opt = model.configure_optimizers(model_params, lr_params)
     return model, opt, model_params, train_params, lr_params
@@ -382,7 +378,6 @@ def load_transformer(file, model_params, train_params, lr_params, cuda=True):
         model_params['betas'] = checkpoint['betas']
     lr_params['lr'] = 2.5e-4
 
-
     model = transformer.Transformer(num_blocks, d_model, d_middle, vocab_size, dropout, h, d_q, d_k, d_v)
 
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -394,4 +389,3 @@ def load_transformer(file, model_params, train_params, lr_params, cuda=True):
         optimizer_to(opt, device)
 
     return model, opt, model_params, train_params, lr_params
-

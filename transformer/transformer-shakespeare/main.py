@@ -6,7 +6,6 @@ from transformer_libs import data_utils
 from transformer_libs import utils
 from transformer_libs import train
 import os
-import random
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
@@ -24,17 +23,14 @@ def prepare_train_config():
 def main():
     torch.manual_seed(0)
 
-    # Load the dataset
-    ds = data_utils.load_ds(config.wiki_ds_file)
-    random.shuffle(ds)
-
     # Load the tokenizer
     tok_file = config.tok_file
-    tok = tokenizer.WikiTok()
+    tok = tokenizer.ShakespeareTok()
     tok.load(tok_file)
 
-    # Demo the tokenizer
-    tok.tokenizer_test()
+    #shakespeare_path = 'data/shakespeare/shakespeare.csv'
+    #file = 'data/shakespeare/shakespeare_ds.pkl'
+    #data_utils.create_shakespeare_ds(shakespeare_path, tok, file)
 
     vocab_size = tok.get_vocab_size()
 
@@ -42,11 +38,11 @@ def main():
     model_params['vocab_size'] = vocab_size
 
     # To load most recent model set LOAD flag to True
-    LOAD = False
+    LOAD = True
     # file = None, To load a specific model uncomment this and set a file.
     model, opt, model_params, train_params, lr_params = utils.create_model(LOAD, config_params['model_directory'],
-                                                                           model_params, train_params, lr_params,
-                                                                           file=None)
+                                                                           model_params, train_params, lr_params, file=None)
+    # Output model parameters
     utils.print_params(model_params)
     utils.print_params(train_params)
     utils.print_params(lr_params)
@@ -58,13 +54,20 @@ def main():
 
     # Set the loss function as cross-entropy loss
     loss_func = nn.CrossEntropyLoss()
-    lr_func = utils.constant_lr
-    dl_params = {'L': model_params['seq_len'], 'tok': tok, 'ds': ds}
-    dl = data_utils.WikipediaDL(model_params['bs'], model_params['samples_done'], dl_params)
 
+    # Set lr function
+    lr_func = utils.constant_lr
+
+    # Set DL parameters and get DL
+    ds = data_utils.load_ds(config.ds)
+    dl_params = {'L': model_params['seq_len'], 'tok': tok, 'ds': ds}
+    dl = data_utils.ShakespeareDL(model_params['bs'], model_params['samples_done'], dl_params)
+
+    # Prepare Trainer
     trainer = train.Train(model, opt, model_params, train_params, lr_params, config_params, loss_func, dl,
                           lr_func)
 
+    # Train!
     trainer.train(50_000)
 
 

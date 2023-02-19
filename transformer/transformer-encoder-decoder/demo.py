@@ -1,32 +1,58 @@
+import config
+import torch
+import torch.nn.functional as F
+from transformer_libs import data_utils
+from transformer_libs import utils
 
-def demo_model(model):
+device = torch.device("cpu")
+
+def prepare_train_config():
+    model_params = config.model_params
+    lr_params = config.lr_params
+    train_params = config.train_params
+    config_params = config.config_params
+    return model_params, train_params, lr_params, config_params
+
+def demo_model():
+    torch.manual_seed(0)
+
+    model_params, train_params, lr_params, config_params = prepare_train_config()
+
+    # To load most recent model set LOAD flag to True
+    LOAD = True
+    # file = None To load a specific model uncomment this and set a file.
+    model, opt, model_params, train_params, lr_params = utils.create_transformer_model(LOAD, config_params['model_directory'],
+                                                                                       model_params, train_params, lr_params,
+                                                                                       file=None)
     model.eval()
-    MAX_SEQ_LEN = 50
-    d_model = 12
-    bs = 1
-    seq_len = random.randint(1, MAX_SEQ_LEN)
-    enc_src, dec_src, target = generate_batch(bs, seq_len, d_model)
-    original_seq = enc_src
-    enc_src = F.one_hot(enc_src.to(torch.int64), num_classes=d_model).float()
-    dec_src = F.one_hot(dec_src.to(torch.int64), num_classes=d_model).float()
 
-    enc_src = enc_src.to(device)
-    dec_src = dec_src.to(device)
+    utils.print_params(model_params)
+    utils.print_params(train_params)
+    utils.print_params(lr_params)
+    utils.print_params(config_params)
+
+    # Get the total number of parameters in the model
+    pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f'Number of model parameters: {pytorch_total_params}')
+
+
+    dl_params = {'max_seq_len': model_params['seq_len'], 'd_model': model_params['d_model'], 'vocab_size': model_params['vocab_size']}
+    dl = data_utils.TransformerSeqDL(model_params['bs'], model_params['samples_done'], dl_params)
+    src, target = dl()
+
     target = target.to(device)
 
-    pos_enc = positional_encoding(MAX_SEQ_LEN, d_model)
-    pos_enc = pos_enc.to(device)
-    mask = create_upper_mask(MAX_SEQ_LEN + 2)
-    mask = mask.to(device)
+    # run through model
+    pred = model(src)
 
-    pe = pos_enc[0,:seq_len+1,:d_model]
-    msk = mask[0, :seq_len+1,: seq_len+1]
-    pred = model(enc_src, dec_src, pe, None, msk)
-
-    pred = pred.permute(0,2,1)
+    pred = pred.permute(0, 2, 1)
     pred = torch.argmax(F.softmax(pred, dim=1), dim=1)
+    pred = pred[0,:]
+    target = target[0,:]
     print(pred.shape)
     print(target.shape)
     print(pred)
     print(target)
-    print(original_seq)
+
+
+demo_model()

@@ -34,7 +34,8 @@ train_params = {
 lr_params = {
     'update_lr_every': accumulate_size,
     'batch_scale_factor': 1,
-    'lr': 2.5e-4,
+    'constant_lr': 2.5e-4,
+    'lr': 1.5e-4,
 }
 
 config_params = {
@@ -47,6 +48,9 @@ wiki_ds_file = "C:\\Users\\semis\\IdeaProjects\\DL\\transformer\\shared_data\\" 
 # tokenizer file path
 tok_file = "../shared_data/tokenizers/tokenizer-32768.json"
 
+# directory for train logs
 log_directory = './logs/'
+
+# save and load models from
 model_directory = './models/'
 

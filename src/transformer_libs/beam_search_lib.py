@@ -19,7 +19,7 @@ def nucleus_sampling(b, p, top_k):
     return next_token_indices
 
 
-def beam_search_2(model, params, width, max_depth, p_nuc, prompt):
+def beam_search_2(model, params, width, max_depth, p_nuc, prompt, tok=None):
     d_model = params['d_model']
     node = {'prompt': prompt, 'score': 0, 'tokens': [], 'depth': 0}
     candidates = []
@@ -31,29 +31,38 @@ def beam_search_2(model, params, width, max_depth, p_nuc, prompt):
         node = q.pop()
 
         if node['depth'] == max_depth:
+            tokens = node['tokens']
+            tokens = [str(t) for t in tokens]
+            tok_str = " ".join(tokens)
+            list_prompt = prompt[0].tolist()
+            list_prompt = [str(t) for t in list_prompt]
+            str_prompt = " ".join(list_prompt)
+            count = str_prompt.count(tok_str)
+            node['score'] += node['score'] * count
             final_candidates.append(node)
             continue
         prompt = node['prompt']
         seq_len = prompt.shape[-1]
 
-        pe = utils.get_pe(seq_len, d_model).to(device)
-        out = model(prompt, pe)
+        out = model(prompt)
         last_row = out[:, -1, :]
         last_row = last_row.squeeze()
         children = nucleus_sampling(last_row, p_nuc, width)  # this is token indices and their corresponding probs
         probs = F.softmax(last_row, dim=-1)
         for c in children:
             index = c.item()
+            #dip = probs[9440]
             token = index
             score = -torch.log(probs[index])
-
+            #debug = tok.decode(token)
+            #val = probs[index]
             # TODO implement a penalty for repeating tokens in a row. For now model seems pretty good
             # about not repeating.
 
             # pl = prompt.tolist()
             # pl = pl[0]
-            # ct = pl.count(token)
-            # score *= (.1 ** ct)
+            #ct = node['tokens'].count(token)
+            #score *= ct
             child_data = {'score': node['score'] + score, 'token': token, 'tokens': node['tokens'] + [token]}
             token = torch.ones(1) * token
             child_data['prompt'] = torch.cat([node['prompt'].squeeze(), token], -1).to(torch.int64).unsqueeze(0)
@@ -68,13 +77,13 @@ def beam_search_2(model, params, width, max_depth, p_nuc, prompt):
             candidates = []
             continue
 
-    winner = sorted(final_candidates, key=lambda d: d['score'])[-1]
+    winner = sorted(final_candidates, key=lambda d: d['score'])[0]
 
     # get the top candidate and its first word.  This is what we return!
 
-    next_token = winner['tokens'][0]
+    next_token, top_tokens = winner['tokens'][0], sorted(final_candidates, key=lambda d: d['score'])
 
-    return next_token
+    return next_token, [t['tokens'][0] for t in top_tokens]
 
 
 def beam_search(model, params, width, p, prompt, n):
@@ -89,8 +98,7 @@ def beam_search(model, params, width, p, prompt, n):
         # generate the batches
         seq_len = prompt.shape[-1]
 
-        pe = utils.get_pe(seq_len, d_model).to(device)
-        b = model(prompt, pe)
+        b = model(prompt)
 
         b = b[:, -1, :]
         candidates = []
@@ -158,10 +166,20 @@ def generate_new_beam_batch(prev_batch, new_beam):
 
 
 def generate_next_n_tokens(prompt, n, search_function, model, model_params, width, max_depth, p_nuc, tok):
+    top_toks = []
     for _ in range(n):
-        result = search_function(model, model_params, width, max_depth, p_nuc, prompt)
+        result, top_tokens = search_function(model, model_params, width, max_depth, p_nuc, prompt, tok)
+        top_toks.append((tok.decode(result), [tok.decode(t) for t in top_tokens]))
+        #print("------------------------------------------------------")
+        #print(tok.decode(result))
         print(tok.decode(result), end="")
         result = torch.ones(1) * result
         prompt = torch.cat([prompt.squeeze(), result], -1).to(torch.int64).unsqueeze(0)
+        #print(result)
+        #print(prompt)
+        #debug_check = prompt.tolist()
+        #debug_p = tok.decode(debug_check[0])
 
-    return prompt
+        #print(debug_p)
+
+    return prompt, top_toks
