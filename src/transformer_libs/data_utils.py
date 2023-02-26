@@ -2,6 +2,7 @@ import random
 import torch
 import numpy as np
 import torch.nn.functional as F
+import pickle
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -81,8 +82,8 @@ class WikipediaDL(BaseDataLoader):
         ).input_ids
 
         if (self.samples_done + 1) % 1000 == 0:
-            total_seq = self.samples_done * self.bs * self.L
-            print(f"\n***** Epoch progress: {total_seq/len(self.ds)} ***** \n")
+            total_seq = self.samples_done * self.bs
+            print(f"\n***** Epoch progress: {total_seq / len(self.ds)} ***** \n")
 
         combined = sample[:, :self.L]
         src = combined[:, :-1].to(device)  # bs x L
@@ -118,8 +119,8 @@ class BooksDL(BaseDataLoader):
         ).input_ids
 
         if (self.samples_done + 1) % 1000 == 0:
-            total_seq = self.samples_done * self.bs * self.L
-            print(f"\n***** Epoch progress: {total_seq/len(self.ds)} ***** \n")
+            total_seq = self.samples_done * self.bs
+            print(f"\n***** Epoch progress: {total_seq / len(self.ds)} ***** \n")
 
         combined = sample[:, :self.L]
         src = combined[:, :-1].to(device)  # bs x L
@@ -157,6 +158,7 @@ class ChatBotDL(BaseDataLoader):
         src = combined[:, :-1].to(device)  # bs x L
         target = combined[:, 1:].to(device)  # bs x L
         return src, target
+
 
 # This is a data loader for the transformer
 # It is specialized for the task of reversing a sequence of numbers
@@ -210,8 +212,8 @@ class ShakespeareDL(BaseDataLoader):
             sample = torch.Tensor(sample).long()
 
         if (self.samples_done + 1) % 1000 == 0:
-            total_seq = self.samples_done * self.bs * self.L
-            print(f"\n***** Epoch progress: {total_seq/len(self.ds)} *****\n")
+            total_seq = self.samples_done * self.bs
+            print(f"\n***** Epoch progress: {total_seq / len(self.ds)} *****\n")
 
         self.total_sequences += self.bs * self.L
         sample = sample.view(self.bs, self.L)
@@ -241,6 +243,7 @@ def get_wiki_batch(ds, tok, bs, batches_done, L):
     src = combined[:, :-1].to(device)  # bs x L
     target = combined[:, 1:].to(device)  # bs x L
     return src, target
+
 
 def load_book(file):
     book = []
@@ -329,10 +332,6 @@ def create_book_ds(db_size=100_000):
             print("percent done: ", len(ds) / db_size)
     random.shuffle(ds)
     return ds
-
-
-import pickle
-
 
 def save_ds(ds, file):
     open_file = open(file, "wb")
@@ -505,6 +504,7 @@ def read_shakespeare_data(shakespeare_path):
 
     return lines
 
+
 def create_shakespeare_ds(shakespeare_path, tok, file):
     df = pd.read_csv(shakespeare_path)
     lines = df['PlayerLine'].tolist()
@@ -513,8 +513,6 @@ def create_shakespeare_ds(shakespeare_path, tok, file):
         result.extend(tok.encode(line))
     save_ds(result, file)
     return result
-
-
 
 
 if __name__ == '__main__':

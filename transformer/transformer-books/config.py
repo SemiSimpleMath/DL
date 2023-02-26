@@ -21,7 +21,7 @@ model_params = {'num_blocks': 12,
                 }
 
 # zero gradients after every accumulate_size batches
-accumulate_size = 10
+accumulate_size = 100
 train_params = {
     'accumulate_size': accumulate_size,
     'update_lr_every': accumulate_size,
@@ -34,7 +34,7 @@ train_params = {
 lr_params = {
     'update_lr_every': accumulate_size,
     'batch_scale_factor': 1,
-    'constant_lr': 2.5e-4,
+    'constant_lr': 1.25e-4,
     'lr': 1.5e-4,
 }
 

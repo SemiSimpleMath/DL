@@ -29,14 +29,14 @@ x3 = d3['batch_num']
 y3 = d3['current_loss']
 
 high = len(x1)
-low = high - 500
+low = high - 1000
 print (high)
 x1 = x1[low:high]
 y1 = y1[low:high]
 
-high = high + 200
-x3 = x3[:high]
-y3 = y3[:high]
+high = -1
+x3 = x3[low:high]
+y3 = y3[low:high]
 
 plt.xlabel('Number of batches')
 plt.ylabel(f'Average loss')
@@ -45,7 +45,7 @@ x1 = list(map(float, x1))
 y1 = list(map(float, y1))
 
 from scipy.signal import savgol_filter
-yhat = savgol_filter(y1, 5, 3) # window size 51, polynomial order 3
+yhat = savgol_filter(y1, 50, 3) # window size 51, polynomial order 3
 x2 = list(map(float, x1))
 y2 = list(map(float, yhat))
 

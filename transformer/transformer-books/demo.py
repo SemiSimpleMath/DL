@@ -11,9 +11,9 @@ device = torch.device("cpu")
 
 
 def main():
-    width = 3
-    p_nuc = .90
-    max_depth = 3
+    width = 10
+    p_nuc = .95
+    max_depth = 2
     n = 100
 
     # Load the tokenizer
@@ -21,7 +21,7 @@ def main():
     tok = tokenizer.WikiTok()
     tok.load(tok_file)
 
-    prompt = "That Summer we decided to"
+    prompt = "When I was older we moved to Paris"
     print(f'Prompt: {prompt}')
 
     text_prompt = prompt

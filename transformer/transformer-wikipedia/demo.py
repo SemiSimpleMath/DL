@@ -21,7 +21,7 @@ def main():
     tok = tokenizer.WikiTok()
     tok.load(tok_file)
 
-    prompt = "We were all celebrating that Jouko"
+    prompt = "The cubist movement was founded by"
     print(f'Prompt: {prompt}')
 
     text_prompt = prompt

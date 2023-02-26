@@ -29,7 +29,7 @@ y1 = d1['current_loss']
 # y3 = d3['current_loss']
 
 high = len(x1)
-low = len(x1)-1500
+low = high - 2000
 print (high)
 x1 = x1[low:high]
 y1 = y1[low:high]
@@ -44,7 +44,7 @@ x1 = list(map(float, x1))
 y1 = list(map(float, y1))
 
 from scipy.signal import savgol_filter
-yhat = savgol_filter(y1, 100, 3) # window size 51, polynomial order 3
+yhat = savgol_filter(y1, 10, 3) # window size 51, polynomial order 3
 x2 = list(map(float, x1))
 y2 = list(map(float, yhat))
 

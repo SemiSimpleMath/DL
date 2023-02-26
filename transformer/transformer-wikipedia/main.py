@@ -42,9 +42,9 @@ def main():
     model_params['vocab_size'] = vocab_size
 
     # To load most recent model set LOAD flag to True
-    LOAD = False
+    LOAD = True
     # file = None, To load a specific model uncomment this and set a file.
-    model, opt, model_params, train_params, lr_params = utils.create_model(LOAD, config_params['model_directory'],
+    model, opt, model_params, train_params, lr_params = utils.create_weight_tie_model(LOAD, config_params['model_directory'],
                                                                            model_params, train_params, lr_params,
                                                                            file=None)
     utils.print_params(model_params)
