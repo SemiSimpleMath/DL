@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from transformer_libs import utils
+from src.transformer_libs import utils
 
 
 class NewGELU(nn.Module):

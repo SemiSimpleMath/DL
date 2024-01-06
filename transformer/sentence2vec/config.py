@@ -15,47 +15,42 @@ model_params = {'num_blocks': 12,
                 'd_v': d_model // h,
                 'weight_decay': 0.1,
                 'betas':  (0.9, 0.95),
-                'seq_len': 128,
-                'bs': 16,
+                'seq_len': 256,
+                'bs': 8,
                 'weight_tying': True,
-                'model_class_name': 'base_decoder'
                 }
 
 # zero gradients after every accumulate_size batches
-accumulate_size = 1
+accumulate_size = 50
 train_params = {
     'accumulate_size': accumulate_size,
     'update_lr_every': accumulate_size,
-    'output_every': 50 * accumulate_size,
-    'save_every': 10000 * accumulate_size,
-    'eval_every': 20000 * accumulate_size,
+    'output_every': 20 * accumulate_size,
+    'save_every': 500 * accumulate_size,
+    'eval_every': 2000 * accumulate_size,
 }
 
 
 lr_params = {
     'update_lr_every': accumulate_size,
     'batch_scale_factor': 1,
-    'constant_lr': 2.5e-4,
-    'lr': 2.5e-4,
-    'warmup_steps': 4000 // accumulate_size,
-    'd_model':model_params['d_model']
+    'constant_lr': 1.0e-5,
+    'lr': 1.25e-4,
 }
 
 config_params = {
-    'model_directory': 'f:/models/',
-    'log_directory': './logs2/'
+    'model_directory': './models/',
+    'log_directory': './logs/'
 }
-# config.py
-from transformer_libs.tokenizer import WikiTok
-tokenizer_class = WikiTok
-tok_special_tokens = [('pad_token', '[PAD]')]
+
+wiki_ds_file = "C:\\Users\\semis\\IdeaProjects\\DL\\transformer\\shared_data\\" + 'wiki_train.pkl'
+
+# tokenizer file path
 tok_file = "../shared_data/tokenizers/tokenizer-32768.json"
 
-ds_dir = "D:/data_sets/probabilistic_transformer/tokenized/wikipedia"
-
 # directory for train logs
-log_directory = './logs2/'
+log_directory = './logs/'
 
 # save and load models from
-model_directory = 'f:/models/trie_models'
+model_directory = './models/'
 

@@ -1,10 +1,7 @@
 import config
 import torch
-import torch.nn as nn
 from transformer_libs import tokenizer
 from transformer_libs import data_utils
-from transformer_libs import utils
-from transformer_libs import train
 import os
 import random
 
@@ -63,49 +60,25 @@ def main():
 
     encoded, decoded = tok.test("Testing the tokenizer!")
     print(encoded, decoded)
-    model_params, train_params, lr_params, config_params = prepare_train_config()
-    model_params['vocab_size'] = vocab_size
 
-    # To load most recent model set LOAD flag to True
-    LOAD = True
-    # file = None, To load a specific model uncomment this and set a file.
-    model, opt, model_params, train_params, lr_params = utils.create_model(LOAD, config.model_directory,
-                                                                           model_params, train_params, lr_params,
-                                                                           file=None)
-    utils.print_params(model_params)
-    utils.print_params(train_params)
-    utils.print_params(lr_params)
-    utils.print_params(config_params)
+    seq_len = 256
+    bs = 2000
+    samples_done = 0
+    dl_params = {'L': seq_len, 'tok': tok, 'ds': ds}
+    dl = data_utils.WikipediaDL_2(bs, samples_done, dl_params, tok, ds, pickle_files)
 
+    src, target = next(iter(dl))
 
-    train_params['batch_num'] = model_params['batch_num']
+    #src = src.tolist()
+    print(src)
+    print(target)
+    print(tok.decode(src[0]))
+    print(tok.decode(target[0]))
+    print(tok.decode(src[1]))
+    print(tok.decode(target[1]))
+if __name__ == "__main__":
+    main()
 
-    # Get the total number of parameters in the model
-    pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f'Number of model parameters: {pytorch_total_params}')
+from torch.nn import TransformerDecoderLayer
 
-    # Set the loss function as cross-entropy loss
-    def cross_entropy(pred, target):
-        pred = pred.permute(0, 2, 1)
-        loss_f = nn.CrossEntropyLoss()
-        loss = loss_f(pred, target)
-        return loss
-
-
-    loss_func = cross_entropy
-    lr_func = utils.get_lr
-
-
-    dl_params = {'L': model_params['seq_len'], 'tok': tok, 'ds': ds}
-    dl = data_utils.WikipediaDL_2(model_params['bs'], model_params['samples_done'], dl_params, tok, ds, pickle_files)
-
-    sample_function = show_sample_function_generator(tok)
-
-
-    trainer = train.Train(model, opt, model_params, train_params, lr_params, config_params, loss_func, dl,
-                          lr_func, sample_function=sample_function)
-
-    trainer.train(150_000)
-
-
-main()
+decoder_layer = TransformerDecoderLayer(d_model=layer_size, nhead=h, dim_feedforward=4 * layer_size, dropout=self.dropout_rate)

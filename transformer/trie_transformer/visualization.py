@@ -16,7 +16,7 @@ def get_data(file):
 
 most_recent_log = utils.most_recent_file(config.log_directory)
 d1 = get_data(most_recent_log)
-d1 = get_data('logs/log952216.txt')
+d1 = get_data('logs/log462802.txt')
 
 
 #d3 = get_data('logs/log15085.txt')
@@ -30,8 +30,9 @@ y1 = d1['current_loss']
 
 high = len(x1)
 low = high - 10000
+high = 1000
 low = 0
-high = 500
+
 print (high)
 x1 = x1[low:high]
 y1 = y1[low:high]

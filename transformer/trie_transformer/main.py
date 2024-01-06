@@ -8,30 +8,30 @@ from transformer_libs import train
 import os
 import random
 
+
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def show_sample_function_generator(tok):
     def show_sample(pred, target):
-
         probabilities = torch.softmax(pred, dim=-1)
         predicted_token_ids = torch.argmax(probabilities, dim=-1)
 
         predicted_token_ids_list = predicted_token_ids.tolist()
         target_sample_ids_list = target.tolist()
 
-        # Decode each sequence in the batch
-        for i in range(1):
-            predicted_sequence = predicted_token_ids_list[i]
-            target_sequence = target_sample_ids_list[i]
+        # Only process the first element of the batch for now
+        predicted_sequence = predicted_token_ids_list[0]
+        target_sequence = target_sample_ids_list[0]
 
-            # Decode sequences
-            decoded_predicted = tok.decode(predicted_sequence)
-            decoded_target = tok.decode(target_sequence)
+        # Decode sequences token by token
+        for pred_token_id, target_token_id in zip(predicted_sequence, target_sequence):
+            decoded_predicted = tok.decode([pred_token_id])
+            decoded_target = tok.decode([target_token_id])
+            print(f"Target: {decoded_target}\t Predicted: {decoded_predicted}")
 
-            print(f"Predicted Sequence {i+1}: {decoded_predicted}")
-            print(f"Target Sequence {i+1}: {decoded_target}\n")
+
     return show_sample
 
 def prepare_train_config():
@@ -65,17 +65,13 @@ def main():
     print(encoded, decoded)
     model_params, train_params, lr_params, config_params = prepare_train_config()
     model_params['vocab_size'] = vocab_size
-
     # To load most recent model set LOAD flag to True
-    LOAD = True
+    LOAD = False
     # file = None, To load a specific model uncomment this and set a file.
     model, opt, model_params, train_params, lr_params = utils.create_model(LOAD, config.model_directory,
                                                                            model_params, train_params, lr_params,
                                                                            file=None)
-    utils.print_params(model_params)
-    utils.print_params(train_params)
-    utils.print_params(lr_params)
-    utils.print_params(config_params)
+
 
 
     train_params['batch_num'] = model_params['batch_num']
@@ -93,7 +89,7 @@ def main():
 
 
     loss_func = cross_entropy
-    lr_func = utils.get_lr
+    lr_func = utils.constant_lr
 
 
     dl_params = {'L': model_params['seq_len'], 'tok': tok, 'ds': ds}
@@ -101,6 +97,12 @@ def main():
 
     sample_function = show_sample_function_generator(tok)
 
+    lr_params['constant_lr'] = 2.5e-4
+
+    utils.print_params(model_params)
+    utils.print_params(train_params)
+    utils.print_params(lr_params)
+    utils.print_params(config_params)
 
     trainer = train.Train(model, opt, model_params, train_params, lr_params, config_params, loss_func, dl,
                           lr_func, sample_function=sample_function)

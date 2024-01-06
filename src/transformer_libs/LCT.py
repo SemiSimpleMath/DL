@@ -71,6 +71,7 @@ class MultiHeadAttentionModule(nn.Module):
         super().__init__()
         self.combined_qkv = nn.Linear(d_model, 3*d_model)
         self.l_proj = nn.Linear(h * d_v, d_model)
+        self.a_modules = nn.ModuleList(AttentionModule_old(d_model, d_q, d_k, d_v, dropout) for _ in range(h))
         self.dropout = nn.Dropout(dropout)
         self.h = h
 
@@ -118,7 +119,7 @@ class DecoderBlock(nn.Module):
         return x
 
 
-class Decoder(nn.Module):
+class Decoder_context_head(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
         self.num_blocks = kwargs.get('num_blocks')
@@ -131,18 +132,13 @@ class Decoder(nn.Module):
         self.d_q = kwargs.get('d_q')
         self.d_k = kwargs.get('d_k')
         self.d_v = kwargs.get('d_v')
-        self.use_weight_tying = kwargs.get('weight_tying')
 
         self.embedding = nn.Embedding(self.d_token, self.d_model)
         self.layers = nn.ModuleList(
             DecoderBlock(self.d_model, self.d_middle, self.dropout, self.h, self.d_q, self.d_k, self.d_v) for _ in range(self.num_blocks))
 
-        self.l_out = nn.Linear(self.d_model, self.d_token, bias=False)
         self.dropout = nn.Dropout(self.dropout)
         self.ln_out = nn.LayerNorm(self.d_model)
-
-        if self.use_weight_tying:
-            self.l_out.weight = self.embedding.weight
 
         # init all weights, and apply a special scaled init to the residual projections, per GPT-2 paper
         self.apply(self._init_weights)
@@ -157,7 +153,7 @@ class Decoder(nn.Module):
         for layer in self.layers:
             x = layer(x)
         x = self.ln_out(x)
-        return self.l_out(x)
+        return x
 
 
     # This is from Andre Karpathy.  I did originally something much simpler, but I am humble enough
@@ -193,8 +189,7 @@ class Decoder(nn.Module):
                 elif pn.endswith('weight') and isinstance(m, blacklist_weight_modules):
                     # weights of blacklist modules will NOT be weight decayed
                     no_decay.add(fpn)
-        if 'l_out.weight' in decay:
-            decay.remove('l_out.weight')
+
         # validate that we considered every parameter
         param_dict = {pn: p for pn, p in self.named_parameters()}
         inter_params = decay & no_decay
@@ -222,3 +217,162 @@ class Decoder(nn.Module):
         elif isinstance(module, nn.LayerNorm):
             torch.nn.init.zeros_(module.bias)
             torch.nn.init.ones_(module.weight)
+
+
+class Decoder_tail(nn.Module):
+    def __init__(self, **kwargs):
+        self.num_blocks = kwargs.get('num_blocks')
+        self.d_model = kwargs.get('d_model')
+        self.d_middle = kwargs.get('d_middle')
+        self.d_token = kwargs.get('d_token', kwargs.get('vocab_size'))
+        self.d_vocab = kwargs.get('vocab_size')
+        self.dropout = kwargs.get('dropout')
+        self.h = kwargs.get('h')
+        self.d_q = kwargs.get('d_q')
+        self.d_k = kwargs.get('d_k')
+        self.d_v = kwargs.get('d_v')
+
+
+        super().__init__()
+        self.layers = nn.ModuleList(
+            DecoderBlock(self.d_model, self.d_middle, self.dropout, self.h, self.d_q, self.d_k, self.d_v) for _ in range(self.num_blocks))
+
+        self.l_out = nn.Linear(self.d_model, self.d_token, bias=False)
+        self.dropout = nn.Dropout(self.dropout)
+        self.ln_out = nn.LayerNorm(self.d_model)
+        self.embedding = nn.Embedding(self.d_token, self.d_model)
+        # init all weights, and apply a special scaled init to the residual projections, per GPT-2 paper
+        self.apply(self._init_weights)
+        for pn, p in self.named_parameters():
+            if pn.endswith('c_proj.weight'):
+                torch.nn.init.normal_(p, mean=0.0, std=0.02 / np.sqrt(2 * self.num_blocks))
+
+    def forward(self, context, dec_inp):
+        x = self.embedding(dec_inp) * np.sqrt(self.d_model)  # bs x L x d_model
+        result = torch.cat([context, x], dim=1) # L->L+1
+        pe = utils.get_pe(result)
+        x = self.dropout(result + pe)
+        for layer in self.layers:
+            x = layer(x)
+        x = self.ln_out(x)
+        x = self.l_out(x)
+        return x[:,1:,:]
+
+    def configure_optimizers(self, model_params, lr_params):
+        """
+        This long function is unfortunately doing something very simple and is being very defensive:
+        We are separating out all parameters of the model into two buckets: those that will experience
+        weight decay for regularization and those that won't (biases, and layernorm/embedding weights).
+        We are then returning the PyTorch optimizer object.
+        """
+
+        # separate out all parameters to those that will and won't experience regularizing weight decay
+        decay = set()
+        no_decay = set()
+        whitelist_weight_modules = (nn.Linear,)
+        blacklist_weight_modules = (nn.LayerNorm, nn.Embedding)
+
+        for mn, m in self.named_modules():
+            for pn, p in m.named_parameters():
+                fpn = '%s.%s' % (mn, pn) if mn else pn  # full param name
+                # random note: because named_modules and named_parameters are recursive
+                # we will see the same tensors p many many times. but doing it this way
+                # allows us to know which parent module any tensor p belongs to...
+                # Check if this parameter is tied and handle accordingly
+
+                if pn.endswith('bias'):
+                    # all biases will not be decayed
+                    no_decay.add(fpn)
+                elif pn.endswith('weight') and isinstance(m, whitelist_weight_modules):
+                    # weights of whitelist modules will be weight decayed
+                    decay.add(fpn)
+                elif pn.endswith('weight') and isinstance(m, blacklist_weight_modules):
+                    # weights of blacklist modules will NOT be weight decayed
+                    no_decay.add(fpn)
+        if 'l_out.weight' in decay:
+            decay.remove('l_out.weight')
+            no_decay.add('l_out.weight')
+        # validate that we considered every parameter
+        param_dict = {pn: p for pn, p in self.named_parameters()}
+        inter_params = decay & no_decay
+        union_params = decay | no_decay
+        assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params),)
+        assert len(
+            param_dict.keys() - union_params) == 0, "parameters %s were not separated into either decay/no_decay set!" \
+                                                    % (str(param_dict.keys() - union_params),)
+
+        # create the pytorch optimizer object
+        optim_groups = [
+            {"params": [param_dict[pn] for pn in sorted(list(decay))], "weight_decay": model_params['weight_decay']},
+            {"params": [param_dict[pn] for pn in sorted(list(no_decay))], "weight_decay": 0.0},
+        ]
+        optimizer = torch.optim.AdamW(optim_groups, lr=lr_params['lr'], betas=model_params['betas'])
+        return optimizer
+
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        elif isinstance(module, nn.LayerNorm):
+            torch.nn.init.zeros_(module.bias)
+            torch.nn.init.ones_(module.weight)
+
+class TransitionModule(nn.Module):
+    def __init__(self, seq_len, r, d_model):
+        super().__init__()
+        # Linear layer to transform the sequence length
+        self.transform = nn.Linear(seq_len, r)
+
+    def forward(self, x):
+        bs, seq_len, d_model = x.size()  # batch size, sequence length, d_model
+        # Reshape to (bs, d_model, seq_len) for linear layer
+        x = x.transpose(1, 2)
+        # Apply linear transformation
+        x = self.transform(x)
+        # Reshape back to (bs, r, d_model)
+        x = x.transpose(1, 2)
+        return x
+
+class ReverseTransitionModule(nn.Module):
+    def __init__(self, r, seq_len, d_model):
+        super().__init__()
+        # Linear layer to transform the compressed sequence length back to original
+        self.expand = nn.Linear(r, seq_len)
+
+    def forward(self, x):
+        bs, r, d_model = x.size()  # batch size, compressed sequence length, d_model
+        # Reshape to (bs, d_model, r) for the linear layer
+        x = x.transpose(1, 2)
+        # Apply linear transformation to expand
+        x = self.expand(x)
+        # Reshape back to (bs, seq_len, d_model)
+        x = x.transpose(1, 2)
+        return x
+
+class LongContextTransformer(nn.Module):
+    def __init__(self, **kwargs):
+        super().__init__()
+        self.head_params = kwargs['head']
+        self.tail_params = kwargs['tail']
+        r = self.head_params['r']
+        seq_len = self.head_params['seq_len']
+        d_model = self.tail_params['d_model']
+        self.head = Decoder_context_head(**self.head_params)
+        self.transition = TransitionModule(seq_len, r, d_model)
+        self.tail = Decoder_tail(**self.tail_params)
+
+    def configure_optimizers(self, model_params, lr_params):
+        head_params = model_params['head']
+        tail_params = model_params['tail']
+        self.head.configure_optimizers(head_params, lr_params)
+        self.tail.configure_optimizers(tail_params, lr_params)
+    def forward(self, x):
+        context_input, seq_input = x
+        head_output = self.head(context_input)
+        transition_output = self.transition(head_output)
+        tail_output = self.tail(transition_output, seq_input)
+
+        return tail_output

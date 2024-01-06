@@ -20,7 +20,7 @@ def nucleus_sampling(b, p, top_k):
 
 
 def beam_search_2(model, params, width, max_depth, p_nuc, prompt, tok=None):
-
+    d_model = params['d_model']
     node = {'prompt': prompt, 'score': 0, 'tokens': [], 'depth': 0}
     candidates = []
     final_candidates = []
@@ -44,7 +44,7 @@ def beam_search_2(model, params, width, max_depth, p_nuc, prompt, tok=None):
         prompt = node['prompt']
         seq_len = prompt.shape[-1]
 
-        out = model(prompt)
+        out, _ = model(prompt)
         last_row = out[:, -1, :]
         last_row = last_row.squeeze()
         children = nucleus_sampling(last_row, p_nuc, width)  # this is token indices and their corresponding probs
